@@ -1,0 +1,272 @@
+/* Swap card - matches v1's .rr-swap-card structure */
+.rr-swap-card,
+.rr-day-events .rr-swap-card,
+.rr-calendar .rr-swap-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.2rem;
+  border: 1px solid rgba(100, 100, 100, 0.5) !important;
+  border-radius: 4px;
+  cursor: grab;
+  transition: transform 0.15s, box-shadow 0.15s;
+  background-color: #252525 !important;
+  width: 80px;
+  text-align: center;
+  position: relative;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.rr-swap-card:hover {
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+}
+
+.rr-swap-card:active {
+  cursor: grabbing;
+}
+
+/* Archived cards */
+.rr-swap-card.rr-archived {
+  cursor: pointer;
+  opacity: 0.5;
+  filter: grayscale(50%);
+}
+
+.rr-swap-card.rr-archived:hover {
+  opacity: 0.7;
+  box-shadow: none;
+  transform: none;
+}
+
+/* Cover */
+.rr-swap-card-cover {
+  width: 50px;
+  height: 70px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 0.15rem;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.rr-swap-card-cover:hover {
+  opacity: 0.8;
+}
+
+.rr-swap-card-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.rr-swap-card-placeholder {
+  width: 100%;
+  height: 100%;
+  background: rgba(128, 128, 128, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+/* Title */
+.rr-swap-card-title {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #337ab7;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  display: block;
+  line-height: 1.2;
+}
+
+.rr-swap-card-title:hover {
+  text-decoration: underline;
+  color: #23527c;
+}
+
+/* Author */
+.rr-swap-card-author {
+  font-size: 0.6rem;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  max-width: 100%;
+  margin-top: 0.15rem;
+}
+
+.rr-swap-card-author i {
+  font-size: 0.5rem;
+  flex-shrink: 0;
+}
+
+.rr-swap-card-author:hover {
+  opacity: 1;
+  color: #337ab7;
+}
+
+/* Status icon */
+.rr-swap-icon {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 1rem;
+  z-index: 5;
+  opacity: 0.95;
+}
+
+/* We posted their shoutout (green check) */
+.rr-swap-icon-swapped {
+  color: #fff;
+  background: #27ae60;
+  border-radius: 50%;
+  width: 1.1em;
+  height: 1.1em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rr-swap-icon-swapped i {
+  font-size: 0.65em;
+}
+
+/* Swap complete - both parties posted (retweet icon) */
+.rr-swap-icon-returned {
+  color: #fff;
+  background: #17a2b8;
+  border-radius: 50%;
+  width: 1.1em;
+  height: 1.1em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rr-swap-icon-returned i {
+  font-size: 0.65em;
+}
+
+.rr-swap-icon-notscanned {
+  color: #888;
+  opacity: 0.8;
+}
+
+/* We posted, scanned, they didn't return */
+.rr-swap-icon-notfound {
+  color: #e74c3c;
+}
+
+/* Scheduled but not posted yet - orange clock */
+.rr-swap-icon-scheduled {
+  color: #e67e22;
+}
+
+/* They shouted us first - speech bubble */
+.rr-swap-icon-shouted {
+  color: #17a2b8;
+  background: rgba(23, 162, 184, 0.15);
+  border-radius: 50%;
+  width: 1.1em;
+  height: 1.1em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rr-swap-icon-shouted i {
+  font-size: 0.65em;
+}
+
+.rr-swap-icon-checking {
+  color: #17a2b8;
+}
+
+/* Checking state */
+.rr-swap-card.rr-checking {
+  border-color: #17a2b8 !important;
+}
+
+/* Progress bar on card */
+.rr-card-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(128, 128, 128, 0.3);
+  border-radius: 0 0 4px 4px;
+  overflow: hidden;
+}
+
+.rr-card-progress-bar {
+  height: 100%;
+  background: #17a2b8;
+  transition: width 0.3s ease;
+}
+
+/* Dragging state */
+.rr-swap-card.rr-dragging {
+  opacity: 0.5;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .rr-swap-card {
+    width: 70px;
+  }
+  .rr-swap-card-cover {
+    width: 45px;
+    height: 62px;
+  }
+}
+
+@media (max-width: 900px) {
+  .rr-swap-card {
+    width: 60px;
+    padding: 0.15rem;
+  }
+  .rr-swap-card-cover {
+    width: 38px;
+    height: 52px;
+  }
+  .rr-swap-card-title {
+    font-size: 0.55rem;
+  }
+  .rr-swap-card-author {
+    font-size: 0.5rem;
+  }
+  .rr-swap-icon {
+    font-size: 0.8rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .rr-swap-card {
+    width: 50px;
+    padding: 0.1rem;
+  }
+  .rr-swap-card-cover {
+    width: 32px;
+    height: 44px;
+  }
+  .rr-swap-card-title,
+  .rr-swap-card-author {
+    font-size: 0.45rem;
+  }
+  .rr-swap-icon {
+    font-size: 0.7rem;
+  }
+}

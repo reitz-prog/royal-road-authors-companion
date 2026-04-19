@@ -1,0 +1,30 @@
+/* Dialog styles */
+
+.rr-dialog {
+  min-width: 350px;
+  max-width: 450px;
+}
+
+.rr-dialog-header {
+  padding: 1rem 1.25rem;
+}
+
+.rr-dialog-body {
+  padding: 1rem 1.25rem;
+}
+
+.rr-dialog-message {
+  margin: 0;
+}
+
+.rr-dialog-message ul {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.rr-dialog-footer {
+  padding: 0.75rem 1.25rem;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}

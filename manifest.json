@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Royal Road Author Companion",
+  "version": "3.0.0",
+  "description": "Calendar-based shoutout swap scheduler for Royal Road authors",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "https://www.royalroad.com/*"
+  ],
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.royalroad.com/author-dashboard*",
+        "https://www.royalroad.com/fiction/*/chapter/*"
+      ],
+      "js": ["dist/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "RR Author Companion"
+  },
+  "icons": {
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

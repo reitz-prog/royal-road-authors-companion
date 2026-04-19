@@ -1,0 +1,64 @@
+/* Drop conflict menu */
+.rr-drop-menu {
+  background: var(--rr-card-bg, #1e1e2d);
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  min-width: 200px;
+  z-index: 10000;
+  overflow: hidden;
+}
+
+.rr-drop-menu-title {
+  padding: 0.75rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+}
+
+.rr-drop-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: transparent;
+  border: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.rr-drop-menu-item:hover {
+  background: rgba(51, 122, 183, 0.2);
+}
+
+.rr-drop-menu-item i {
+  width: 16px;
+  text-align: center;
+  color: #337ab7;
+}
+
+.rr-drop-menu-label {
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.rr-drop-menu-desc {
+  font-size: 0.75rem;
+  color: rgba(128, 128, 128, 0.7);
+  margin-left: auto;
+}
+
+.rr-drop-menu-cancel {
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
+  justify-content: center;
+  color: rgba(128, 128, 128, 0.7);
+}
+
+.rr-drop-menu-cancel:hover {
+  background: rgba(128, 128, 128, 0.1);
+  color: inherit;
+}

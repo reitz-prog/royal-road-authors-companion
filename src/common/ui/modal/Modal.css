@@ -1,0 +1,149 @@
+/* Modal styles - Royal Road theme compatible */
+
+/* Modal base - inherits background from RR's .card class */
+.rr-modal {
+  width: 90%;
+  max-width: 900px;
+  display: flex;
+  flex-direction: column;
+}
+
+.rr-modal-small {
+  width: 400px;
+}
+
+.rr-modal-medium {
+  width: 600px;
+}
+
+.rr-modal-large {
+  width: 800px;
+}
+
+.rr-modal-xlarge {
+  width: 95%;
+  max-width: 1100px;
+}
+
+/* Header */
+.rr-modal-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+}
+
+.rr-modal-header .card-title {
+  margin: 0;
+}
+
+.rr-modal-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.rr-modal-close {
+  background: transparent;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  padding: 0.25rem 0.5rem;
+  color: rgba(128, 128, 128, 0.7);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.rr-modal-close:hover {
+  color: inherit;
+}
+
+/* Body */
+.rr-modal .rr-modal-body {
+  overflow: visible;
+}
+
+/* Footer */
+.rr-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* Scrollbar for modal body */
+.rr-modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.rr-modal-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.rr-modal-body::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.3);
+  border-radius: 3px;
+}
+
+.rr-modal-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.5);
+}
+
+/* Form labels inside modal */
+.rr-modal label,
+.rr-label,
+.rr-modal-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+  color: rgba(128, 128, 128, 0.8);
+}
+
+.rr-modal input[type="text"],
+.rr-modal input[type="date"],
+.rr-modal textarea,
+.rr-modal select {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: rgba(128, 128, 128, 0.08);
+  border: 1px solid rgba(128, 128, 128, 0.15);
+  border-radius: 4px;
+  color: inherit;
+  font-size: 0.9rem;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.rr-modal input:focus,
+.rr-modal textarea:focus,
+.rr-modal select:focus {
+  outline: none;
+  border-color: rgba(128, 128, 128, 0.4);
+  background: rgba(128, 128, 128, 0.12);
+}
+
+.rr-modal textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+/* Form groups */
+.rr-modal .form-group {
+  margin-bottom: 1rem;
+}
+
+.rr-modal .form-group:last-child {
+  margin-bottom: 0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .rr-modal,
+  .rr-modal-small,
+  .rr-modal-medium,
+  .rr-modal-large,
+  .rr-modal-xlarge {
+    width: 95vw;
+    max-height: 90vh;
+  }
+}

@@ -1,0 +1,74 @@
+/* Settings Modal Styles */
+
+.rr-settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.rr-settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.rr-settings-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.rr-settings-label input[type="checkbox"],
+.rr-settings-label input[type="radio"] {
+  margin: 0;
+}
+
+.rr-settings-label-disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.rr-settings-description {
+  margin: 0;
+  margin-left: 1.5rem;
+  font-size: 0.85rem;
+  color: rgba(128, 128, 128, 0.8);
+}
+
+.rr-settings-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-left: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.rr-settings-radio {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.rr-settings-badge {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.4rem;
+  background: rgba(128, 128, 128, 0.2);
+  border-radius: 4px;
+  margin-left: 0.5rem;
+}
+
+.rr-settings-danger {
+  padding-top: 1rem;
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
+}
+
+.rr-settings-danger .rr-settings-label {
+  color: #dc3545;
+}
+
+.rr-settings-danger .rr-settings-description {
+  margin-left: 0;
+}

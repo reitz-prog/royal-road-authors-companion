@@ -1,0 +1,196 @@
+/* Follower Analytics - Chart styles only */
+/* Uses Royal Road's native classes for dark/light mode compatibility */
+
+/* Slider tab bar */
+.rr-slider-tabs {
+  display: inline-flex;
+  background: rgba(128, 128, 128, 0.2);
+  border-radius: 4px;
+  padding: 2px;
+}
+
+.rr-slider-tabs .rr-slider-tab {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  color: inherit;
+  opacity: 0.7;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-decoration: none;
+}
+
+.rr-slider-tabs .rr-slider-tab:hover {
+  opacity: 1;
+}
+
+.rr-slider-tabs .rr-slider-tab.active {
+  background: #337ab7;
+  color: #fff;
+  opacity: 1;
+}
+
+/* Bar chart */
+.rr-chart-container {
+  display: flex;
+  padding: 10px 0;
+  overflow: hidden;
+}
+
+.rr-chart-y-axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding-right: 10px;
+  text-align: right;
+}
+
+.rr-y-label {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  line-height: 1;
+}
+
+.rr-chart-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid rgba(128, 128, 128, 0.3);
+  overflow: hidden;
+}
+
+.rr-chart-bars-wrapper {
+  flex: 1;
+  position: relative;
+  min-height: 150px;
+  overflow: hidden;
+}
+
+.rr-chart-grid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.rr-grid-line {
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
+  width: 100%;
+}
+
+.rr-chart-bars {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  padding: 0 5px;
+  gap: 3px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.3);
+}
+
+.rr-bar-group {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-width: 0;
+}
+
+.rr-bar {
+  width: 100%;
+  background: #337ab7;
+  border-radius: 2px 2px 0 0;
+  transition: background 0.15s;
+  cursor: pointer;
+}
+
+.rr-bar:hover {
+  background: #4a9fd4;
+}
+
+.rr-x-labels {
+  display: flex;
+  padding: 0 5px;
+  gap: 3px; /* Must match .rr-chart-bars gap */
+  flex-shrink: 0;
+}
+
+.rr-bar-label {
+  flex: 1;
+  font-size: 0.65rem;
+  opacity: 0.7;
+  text-align: center;
+  padding-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Centered bar chart (for +/- values) */
+.rr-chart-bars-centered {
+  align-items: stretch;
+  border-bottom: none;
+}
+
+.rr-bar-group-centered {
+  align-items: stretch;
+  position: relative;
+}
+
+.rr-bar-group-centered .rr-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  width: 100%;
+}
+
+.rr-bar-positive {
+  background: #337ab7;
+  border-radius: 2px 2px 0 0;
+}
+
+.rr-bar-positive:hover {
+  background: #4a9fd4;
+}
+
+.rr-bar-negative {
+  background: #d9534f;
+  border-radius: 0 0 2px 2px;
+}
+
+.rr-bar-negative:hover {
+  background: #e57373;
+}
+
+.rr-grid-line-zero {
+  border-top: 2px solid rgba(128, 128, 128, 0.6);
+}
+
+/* Slanted x-axis labels - rotated 60 degrees, allow overlap */
+.rr-x-labels-slanted {
+  overflow: visible;
+  height: 50px;
+}
+
+.rr-x-labels-slanted .rr-bar-label {
+  font-size: 0.7rem;
+  font-weight: 500;
+  opacity: 0.85;
+  overflow: visible;
+  white-space: nowrap;
+  transform: rotate(60deg);
+  transform-origin: top left;
+  padding: 4px 0 0 0;
+  margin: 0 -10px 0 0; /* Negative margin to overlap */
+}

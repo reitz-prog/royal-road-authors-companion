@@ -1,0 +1,734 @@
+/* Shoutout Modal Styles - matches v1 */
+
+/* Override base modal for shoutout xlarge */
+.rr-modal.rr-modal-xlarge {
+  width: 770px;
+  max-width: 95vw;
+  max-height: 90vh;
+}
+
+.rr-modal.rr-modal-xlarge .rr-modal-body {
+  overflow: visible;
+}
+
+/* Modal date header */
+.rr-modal-date {
+  font-weight: 500;
+  margin-bottom: 1rem;
+  font-size: 1.1rem;
+}
+
+/* Edit mode layout - Code LEFT, Author RIGHT */
+.rr-modal-edit-layout {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.rr-modal-edit-code {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Fixed height for textarea, auto for preview */
+.rr-textarea-wrapper {
+  height: 150px;
+  min-height: 150px;
+  max-height: 150px;
+}
+
+.rr-modal-preview-container {
+  margin-top: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.rr-modal-code-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.rr-modal-code-header .rr-modal-label {
+  margin-bottom: 0;
+}
+
+.rr-modal-code-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Toggle button badges */
+.rr-modal-code-toggles {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.rr-toggle-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 4px;
+  background: transparent;
+  color: rgba(128, 128, 128, 0.6);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  transition: all 0.15s;
+}
+
+.rr-toggle-btn:hover {
+  background: rgba(128, 128, 128, 0.1);
+  color: inherit;
+}
+
+.rr-toggle-btn.active {
+  background: #337ab7;
+  border-color: #337ab7;
+  color: #fff;
+}
+
+/* Textarea with line numbers - matches v1 */
+.rr-textarea-wrapper {
+  display: flex;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.rr-line-numbers {
+  background: rgba(128, 128, 128, 0.1);
+  padding: 0.5rem;
+  font-family: monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: rgba(128, 128, 128, 0.7);
+  text-align: right;
+  user-select: none;
+  min-width: 40px;
+  min-height: 150px;
+  max-height: 150px;
+  overflow: hidden;
+}
+
+.rr-line-numbers div {
+  height: 1.5em;
+}
+
+.rr-modal-textarea {
+  min-height: 150px;
+  max-height: 150px;
+  flex: 1;
+  resize: none;
+  font-family: monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  border: none;
+  border-radius: 0;
+  padding: 0.5rem;
+  background: transparent;
+}
+
+.rr-modal-textarea:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Preview content */
+.rr-modal-preview {
+  min-height: 100px;
+}
+
+/* Author panel */
+.rr-modal-author-panel {
+  width: 280px;
+  flex-shrink: 0;
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 8px;
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+}
+
+.rr-author-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(128, 128, 128, 0.5);
+  text-align: center;
+  padding: 1rem;
+}
+
+.rr-author-card {
+  padding: 1rem;
+}
+
+.rr-author-cover {
+  width: 100%;
+  max-width: 150px;
+  height: auto;
+  border-radius: 4px;
+  margin-bottom: 0.75rem;
+}
+
+.rr-author-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.rr-author-fiction {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.rr-author-name {
+  font-size: 0.85rem;
+  color: rgba(128, 128, 128, 0.7);
+}
+
+.rr-author-name a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.rr-author-name a:hover {
+  color: #fff;
+}
+
+/* Large author card for modal */
+.rr-author-card-large {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 1.5rem;
+  gap: 0.5rem;
+}
+
+.rr-author-cover-large {
+  width: 120px;
+  height: 170px;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+
+.rr-author-fiction-large {
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.rr-view-fiction-btn {
+  margin-top: 0.75rem;
+}
+
+/* Scheduled for section in author panel */
+.rr-scheduled-for-section {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
+  text-align: left;
+  width: 100%;
+}
+
+.rr-scheduled-for-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: rgba(128, 128, 128, 0.7);
+  margin-bottom: 0.5rem;
+}
+
+.rr-scheduled-for-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.rr-scheduled-for-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  background: rgba(51, 122, 183, 0.1);
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.rr-scheduled-for-item.rr-archived {
+  background: rgba(40, 167, 69, 0.1);
+}
+
+.rr-scheduled-fiction-title {
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rr-scheduled-date {
+  color: rgba(128, 128, 128, 0.7);
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.rr-scheduled-date.rr-unscheduled {
+  color: #ffc107;
+  font-style: italic;
+}
+
+.rr-archived-icon {
+  color: #28a745;
+  flex-shrink: 0;
+}
+
+/* Expected date row */
+.rr-expected-date-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.rr-expected-date-row .rr-modal-label {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
+/* Schedules section */
+.rr-schedules-section {
+  margin-top: 1rem;
+}
+
+.rr-schedules-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  align-items: center;
+}
+
+.rr-schedule-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem 0.35rem 0.75rem;
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid rgba(128, 128, 128, 0.15);
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.rr-schedule-fiction {
+  font-weight: 500;
+}
+
+.rr-schedule-date {
+  color: rgba(128, 128, 128, 0.7);
+}
+
+.rr-schedule-date-input {
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 3px;
+  color: inherit;
+  font-size: 0.8rem;
+  padding: 0.15rem 0.35rem;
+  cursor: pointer;
+}
+
+.rr-schedule-date-input:hover {
+  border-color: rgba(128, 128, 128, 0.4);
+}
+
+.rr-schedule-date-input:focus {
+  outline: none;
+  border-color: #337ab7;
+}
+
+.rr-schedule-tag.rr-schedule-archived {
+  background: rgba(40, 167, 69, 0.1);
+  border-color: rgba(40, 167, 69, 0.2);
+}
+
+.rr-schedule-archived-icon {
+  color: #28a745;
+  font-size: 0.75rem;
+}
+
+.rr-schedule-remove {
+  background: transparent;
+  border: none;
+  color: rgba(128, 128, 128, 0.5);
+  cursor: pointer;
+  padding: 0 0.25rem;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.rr-schedule-remove:hover {
+  color: #dc3545;
+}
+
+.rr-schedule-add {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  align-items: center;
+}
+
+.rr-schedule-show-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: 1px dashed rgba(128, 128, 128, 0.3);
+  border-radius: 4px;
+  color: rgba(128, 128, 128, 0.5);
+  cursor: pointer;
+  font-size: 1.2rem;
+  transition: all 0.15s;
+}
+
+.rr-schedule-show-add-btn:hover {
+  border-color: rgba(128, 128, 128, 0.5);
+  color: inherit;
+}
+
+.rr-no-schedules {
+  color: rgba(128, 128, 128, 0.5);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+/* My Code fields */
+.rr-mycode-fields {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.rr-mycode-name-field {
+  opacity: 0.7;
+}
+
+.rr-optional-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.rr-optional-hint {
+  font-weight: 400;
+  font-size: 0.7rem;
+  opacity: 0.6;
+}
+
+/* Button alignment helper */
+.me-auto {
+  margin-right: auto;
+}
+
+/* View Mode Styles */
+.rr-shoutout-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.rr-view-header {
+  display: flex;
+  gap: 1rem;
+}
+
+.rr-view-cover {
+  width: 100px;
+  height: 140px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.rr-view-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.rr-view-cover-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  color: rgba(128, 128, 128, 0.3);
+}
+
+.rr-view-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.rr-view-title {
+  font-weight: 600;
+  font-size: 1.2rem;
+}
+
+.rr-view-author {
+  color: rgba(128, 128, 128, 0.7);
+}
+
+.rr-view-link {
+  margin-top: 0.5rem;
+  color: #337ab7;
+  text-decoration: none;
+}
+
+.rr-view-link:hover {
+  text-decoration: underline;
+}
+
+.rr-view-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.rr-view-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.rr-view-row .rr-label {
+  font-weight: 500;
+  min-width: 120px;
+  color: rgba(128, 128, 128, 0.7);
+}
+
+.rr-view-code {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.rr-view-code .rr-label {
+  font-weight: 500;
+  color: rgba(128, 128, 128, 0.7);
+}
+
+.rr-code-preview {
+  padding: 1rem;
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* Go to Chapter button */
+.rr-goto-chapter-btn {
+  margin-top: 1rem;
+}
+
+.rr-goto-chapter-btn i {
+  margin-right: 0.25rem;
+}
+
+/* Swap Section in Author Panel */
+.rr-swap-section {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
+  text-align: center;
+}
+
+.rr-swap-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* We posted their shoutout (green) */
+.rr-swap-badge-swapped {
+  background: rgba(40, 167, 69, 0.2);
+  color: #28a745;
+  border: 1px solid #28a745;
+}
+
+/* Both posted - swap complete (cyan) */
+.rr-swap-badge-returned {
+  background: rgba(23, 162, 184, 0.2);
+  color: #17a2b8;
+  border: 1px solid #17a2b8;
+}
+
+/* We posted, scanned, they didn't return (red) */
+.rr-swap-badge-not-found {
+  background: rgba(220, 53, 69, 0.2);
+  color: #dc3545;
+  border: 1px solid #dc3545;
+}
+
+/* They shouted us first (cyan) */
+.rr-swap-badge-shouted {
+  background: rgba(23, 162, 184, 0.2);
+  color: #17a2b8;
+  border: 1px solid #17a2b8;
+}
+
+/* Scheduled but not posted yet (orange) */
+.rr-swap-badge-scheduled {
+  background: rgba(230, 126, 34, 0.2);
+  color: #e67e22;
+  border: 1px solid #e67e22;
+}
+
+.rr-swap-badge-clickable {
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.rr-swap-badge-clickable:hover {
+  background: rgba(255, 193, 7, 0.4);
+  transform: scale(1.05);
+}
+
+.rr-swap-badge-checking {
+  background: rgba(23, 162, 184, 0.2);
+  color: #17a2b8;
+  border: 1px solid #17a2b8;
+}
+
+.rr-swap-badge-checking i {
+  margin-right: 0.25rem;
+}
+
+.rr-swap-checking {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0 1rem;
+}
+
+.rr-swap-progress-bar {
+  width: 100%;
+  height: 6px;
+  background: rgba(128, 128, 128, 0.2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.rr-swap-progress-fill {
+  height: 100%;
+  background: #17a2b8;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.rr-swap-progress-text {
+  font-size: 0.75rem;
+  color: rgba(128, 128, 128, 0.9);
+}
+
+.rr-swap-progress-chapter {
+  font-size: 0.7rem;
+  color: rgba(128, 128, 128, 0.6);
+  max-width: 100%;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rr-swap-last-scan {
+  font-size: 0.75rem;
+  color: rgba(128, 128, 128, 0.7);
+  margin-top: 0.5rem;
+}
+
+.rr-check-swap-btn {
+  margin-top: 0.5rem;
+}
+
+/* Swap Found Info */
+.rr-swap-found {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: rgba(40, 167, 69, 0.1);
+  border-radius: 6px;
+  border: 1px solid rgba(40, 167, 69, 0.3);
+}
+
+.rr-swap-found-label {
+  font-size: 0.85rem;
+  color: #28a745;
+}
+
+.rr-swap-found-label i {
+  margin-right: 0.25rem;
+}
+
+.rr-swap-view-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  color: #337ab7;
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.rr-swap-view-link:hover {
+  text-decoration: underline;
+}
+
+/* Swap Result (error only now) */
+.rr-swap-result {
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+}
+
+.rr-swap-result.rr-swap-not-found {
+  background: rgba(220, 53, 69, 0.1);
+  color: #dc3545;
+}
+
+.rr-swap-result i {
+  margin-right: 0.25rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .rr-modal-edit-layout {
+    flex-direction: column;
+  }
+  .rr-modal-author-panel {
+    width: 100%;
+  }
+}

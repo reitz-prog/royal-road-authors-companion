@@ -1,0 +1,19 @@
+{
+  "name": "rr-author-companion",
+  "version": "3.0.0",
+  "description": "Royal Road Author Companion - Chrome Extension",
+  "type": "module",
+  "scripts": {
+    "build": "node build.js",
+    "watch": "node build.js --watch",
+    "dev": "node build.js --watch"
+  },
+  "dependencies": {
+    "goober": "^2.1.14",
+    "preact": "^10.19.3",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "esbuild": "^0.20.0"
+  }
+}

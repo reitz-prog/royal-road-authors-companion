@@ -1,0 +1,226 @@
+/* Contact Modal - matches v1's contact modal styles */
+
+.rr-contact-modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.rr-contact-modal-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.5rem;
+}
+
+.rr-contact-modal-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.rr-contact-modal-avatar.rr-contact-avatar-placeholder {
+  background: rgba(128, 128, 128, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+  font-weight: 600;
+}
+
+.rr-contact-modal-name {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.rr-contact-modal-links {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.rr-contact-modal-links .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+/* Loading state */
+.rr-contact-loading {
+  padding: 1rem;
+  text-align: center;
+  opacity: 0.6;
+}
+
+/* Fiction section */
+.rr-contact-fiction-section {
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(128, 128, 128, 0.15);
+}
+
+.rr-section-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  opacity: 0.6;
+  margin-bottom: 0.5rem;
+}
+
+.rr-contact-fiction-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem;
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 6px;
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.2s;
+}
+
+.rr-contact-fiction-card:hover {
+  background: rgba(128, 128, 128, 0.1);
+  text-decoration: none;
+  color: inherit;
+}
+
+.rr-contact-fiction-card + .rr-contact-fiction-card {
+  margin-top: 0.5rem;
+}
+
+.rr-fiction-cover {
+  width: 40px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.rr-fiction-cover.rr-fiction-cover-placeholder {
+  background: rgba(128, 128, 128, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: rgba(128, 128, 128, 0.6);
+}
+
+.rr-fiction-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.rr-fiction-title {
+  font-size: 0.9rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rr-fiction-stats {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.rr-fiction-stat {
+  font-size: 0.7rem;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.rr-fiction-stat.rr-stat-archived {
+  color: #28a745;
+}
+
+.rr-fiction-stat.rr-stat-pending {
+  color: #e67e22;
+}
+
+.rr-fiction-dates {
+  font-size: 0.7rem;
+  opacity: 0.6;
+  margin-top: 0.15rem;
+}
+
+.rr-fiction-date {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  margin-top: 0.15rem;
+}
+
+/* Contact methods (discord, email) */
+.rr-contact-methods {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(128, 128, 128, 0.15);
+}
+
+.rr-contact-method {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.rr-method-icon {
+  width: 24px;
+  text-align: center;
+  font-size: 1.1rem;
+}
+
+.rr-method-icon.fa-discord {
+  color: #5865F2;
+}
+
+.rr-method-icon.fa-envelope {
+  color: #ea4335;
+}
+
+.rr-contact-method input {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+}
+
+.rr-discord-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.rr-contact-value {
+  flex: 1;
+  font-size: 0.9rem;
+}
+
+.rr-contact-value a {
+  color: #337ab7;
+  text-decoration: none;
+}
+
+.rr-contact-value a:hover {
+  text-decoration: underline;
+}
+
+.rr-discord-link {
+  color: #5865F2;
+}
+
+.rr-contact-empty-value {
+  opacity: 0.4;
+  font-style: italic;
+}

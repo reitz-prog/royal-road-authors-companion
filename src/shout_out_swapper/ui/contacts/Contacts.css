@@ -1,0 +1,364 @@
+/* Contacts - list, sections, items, my codes */
+
+/* Main container */
+.rr-contact-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: rgba(128, 128, 128, 0.03);
+  border: 1px solid rgba(128, 128, 128, 0.15);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Header */
+.rr-contact-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: rgba(128, 128, 128, 0.1);
+  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+}
+
+.rr-contact-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.rr-contacts-close {
+  background: transparent;
+  border: none;
+  color: inherit;
+  opacity: 0.5;
+  cursor: pointer;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.rr-contacts-close:hover {
+  opacity: 1;
+}
+
+/* Search */
+.rr-contact-search {
+  padding: 0.5rem;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+}
+
+/* Sections container */
+.rr-contact-sections {
+  flex: 1;
+  overflow: hidden;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.rr-contact-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Upcoming section - 20% of space */
+.rr-upcoming-section {
+  flex: 0 0 20%;
+  max-height: 20%;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+
+.rr-upcoming-items {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* All Contacts - takes remaining space */
+.rr-all-section {
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.rr-contact-items {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.rr-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  opacity: 0.6;
+  padding: 0.25rem 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+/* Section items containers */
+.rr-upcoming-items,
+.rr-contact-items,
+.rr-mycodes-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.rr-mycodes-items {
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+/* Contact item */
+.rr-contact-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.rr-contact-item:hover {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.rr-upcoming-item {
+  border-left: 3px solid #5cb85c;
+}
+
+/* Avatar */
+.rr-contact-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.rr-contact-avatar-placeholder {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(128, 128, 128, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* Contact info */
+.rr-contact-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.rr-contact-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rr-contact-date {
+  font-size: 0.75rem;
+  color: #5cb85c;
+  font-weight: 500;
+}
+
+.rr-contact-fiction {
+  font-size: 0.75rem;
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Delete button */
+.rr-contact-delete {
+  background: transparent;
+  border: none;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 1rem;
+  color: inherit;
+  line-height: 1;
+  transition: opacity 0.15s;
+}
+
+.rr-contact-item:hover .rr-contact-delete {
+  opacity: 0.5;
+}
+
+.rr-contact-delete:hover {
+  opacity: 1;
+  color: #d9534f;
+}
+
+/* Empty state */
+.rr-contact-empty {
+  padding: 1rem;
+  text-align: center;
+  opacity: 0.5;
+  font-size: 0.8rem;
+}
+
+/* My Codes section */
+.rr-mycodes-section {
+  margin-top: auto;
+  border-top: 1px solid rgba(128, 128, 128, 0.15);
+  padding-top: 0.5rem;
+}
+
+.rr-mycodes-add-btn {
+  background: transparent;
+  border: none;
+  color: #337ab7;
+  cursor: pointer;
+  font-size: 1.2rem;
+  line-height: 1;
+  transition: transform 0.15s;
+}
+
+.rr-mycodes-add-btn:hover {
+  transform: scale(1.2);
+}
+
+.rr-mycode-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  background: rgba(128, 128, 128, 0.05);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.rr-mycode-item:hover {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.rr-mycode-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.rr-mycode-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rr-mycode-fiction {
+  font-size: 0.7rem;
+  opacity: 0.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.rr-mycode-actions {
+  display: flex;
+  gap: 0.25rem;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.rr-mycode-item:hover .rr-mycode-actions {
+  opacity: 1;
+}
+
+.rr-mycode-copy {
+  background: transparent;
+  border: none;
+  color: #3b82f6;
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.rr-mycode-delete {
+  background: transparent;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.rr-mycodes-empty {
+  padding: 0.5rem;
+  text-align: center;
+  opacity: 0.5;
+  font-size: 0.75rem;
+}
+
+/* My Codes standalone container - matches contact-list styling */
+.rr-mycodes-container {
+  background: rgba(128, 128, 128, 0.03);
+  border: 1px solid rgba(128, 128, 128, 0.15);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 0.75rem;
+}
+
+.rr-mycodes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  background: rgba(128, 128, 128, 0.1);
+  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+}
+
+.rr-mycodes-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.rr-mycodes-list {
+  padding: 0.5rem;
+  max-height: 150px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.rr-mycodes-container .rr-mycode-actions {
+  opacity: 1;
+}
+
+/* Fiction cover badge */
+.rr-mycode-cover {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid rgba(128, 128, 128, 0.2);
+}
+
+.rr-mycode-cover-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(128, 128, 128, 0.15);
+  color: rgba(128, 128, 128, 0.5);
+  font-size: 0.9rem;
+}

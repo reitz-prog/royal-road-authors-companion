@@ -1,0 +1,221 @@
+/* Today Banner - Chapter edit page shoutout reminder */
+
+.rr-today-banner {
+  margin-bottom: 1.5rem;
+}
+
+.rr-today-banner-content {
+  padding: 0;
+}
+
+/* Header */
+.rr-today-banner-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: rgba(128, 128, 128, 0.05);
+  border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+}
+
+.rr-today-banner-has-shoutout .rr-today-banner-header {
+  background: linear-gradient(135deg, rgba(51, 122, 183, 0.1) 0%, rgba(51, 122, 183, 0.05) 100%);
+  border-bottom-color: rgba(51, 122, 183, 0.2);
+}
+
+.rr-today-banner-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.rr-today-banner-header-left i {
+  color: #337ab7;
+  font-size: 1rem;
+}
+
+.rr-today-banner-header-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+/* Shoutouts container */
+.rr-today-banner-shoutouts {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* Individual shoutout row */
+.rr-today-banner-shoutout {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem;
+  background: rgba(128, 128, 128, 0.03);
+  border: 1px solid rgba(128, 128, 128, 0.1);
+  border-radius: 8px;
+  transition: all 0.15s;
+}
+
+.rr-today-banner-shoutout:hover {
+  background: rgba(128, 128, 128, 0.06);
+  border-color: rgba(128, 128, 128, 0.2);
+}
+
+/* Book with spine effect */
+.rr-today-banner-book {
+  position: relative;
+  flex-shrink: 0;
+  perspective: 200px;
+}
+
+.rr-today-banner-book-spine {
+  position: absolute;
+  left: -6px;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  background: linear-gradient(90deg,
+    rgba(0, 0, 0, 0.3) 0%,
+    rgba(0, 0, 0, 0.1) 30%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(0, 0, 0, 0.1) 70%,
+    rgba(0, 0, 0, 0.2) 100%
+  );
+  border-radius: 2px 0 0 2px;
+  transform: rotateY(-20deg);
+  transform-origin: right center;
+}
+
+.rr-today-banner-cover {
+  width: 55px;
+  height: 75px;
+  object-fit: cover;
+  border-radius: 2px;
+  box-shadow:
+    2px 2px 8px rgba(0, 0, 0, 0.15),
+    0 0 1px rgba(0, 0, 0, 0.1);
+}
+
+.rr-today-banner-cover-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(128, 128, 128, 0.1);
+  color: rgba(128, 128, 128, 0.4);
+  font-size: 1.5rem;
+}
+
+/* Info section */
+.rr-today-banner-info {
+  flex: 1;
+  min-width: 0;
+  padding-left: 0.25rem;
+}
+
+.rr-today-banner-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rr-today-banner-author {
+  font-size: 0.85rem;
+  opacity: 0.7;
+  margin-top: 0.15rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Action buttons */
+.rr-today-banner-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.rr-today-banner-actions .btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.rr-today-banner-actions .btn i {
+  font-size: 0.8rem;
+}
+
+/* Insert button styles */
+.rr-banner-insert-pre,
+.rr-banner-insert-post {
+  background: rgba(51, 122, 183, 0.1);
+  border: 1px solid rgba(51, 122, 183, 0.2);
+  color: #337ab7;
+}
+
+.rr-banner-insert-pre:hover,
+.rr-banner-insert-post:hover {
+  background: rgba(51, 122, 183, 0.2);
+  border-color: rgba(51, 122, 183, 0.3);
+}
+
+.rr-banner-insert-pre:disabled,
+.rr-banner-insert-post:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Calendar Overlay */
+.rr-calendar-overlay {
+  width: 900px;
+  max-width: 95vw;
+  max-height: 90vh;
+  overflow: auto;
+  background: var(--rr-card-bg, #1e1e2d);
+}
+
+.rr-calendar-overlay .card-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: inherit;
+}
+
+.rr-calendar-overlay .card-body {
+  padding: 1rem;
+}
+
+/* Hide unscheduled section in overlay */
+.rr-calendar-overlay .rr-unscheduled-toggle {
+  display: none;
+}
+
+/* Responsive */
+@media (max-width: 576px) {
+  .rr-today-banner-shoutout {
+    flex-wrap: wrap;
+  }
+
+  .rr-today-banner-info {
+    flex: 1 1 calc(100% - 80px);
+  }
+
+  .rr-today-banner-actions {
+    width: 100%;
+    justify-content: flex-end;
+    margin-top: 0.5rem;
+  }
+
+  .rr-calendar-overlay {
+    width: 100%;
+  }
+}
