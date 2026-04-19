@@ -2,13 +2,14 @@
 
 /* Override base modal for shoutout xlarge */
 .rr-modal.rr-modal-xlarge {
-  width: 770px;
-  max-width: 95vw;
+  width: auto;
+  min-width: 400px;
+  max-width: min(95vw, 850px);
   max-height: 90vh;
 }
 
 .rr-modal.rr-modal-xlarge .rr-modal-body {
-  overflow: visible;
+  overflow: auto;
 }
 
 /* Modal date header */
@@ -22,13 +23,15 @@
 .rr-modal-edit-layout {
   display: flex;
   gap: 1.5rem;
+  flex-wrap: wrap;
 }
 
 .rr-modal-edit-code {
-  flex: 1;
+  flex: 1 1 300px;
   display: flex;
   flex-direction: column;
   min-width: 0;
+  max-width: 100%;
 }
 
 /* Fixed height for textarea, auto for preview */
@@ -150,13 +153,14 @@
 
 /* Author panel */
 .rr-modal-author-panel {
-  width: 280px;
-  flex-shrink: 0;
+  flex: 0 0 auto;
+  width: clamp(200px, 30%, 280px);
   border: 1px solid rgba(128, 128, 128, 0.2);
   border-radius: 8px;
   min-height: 150px;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .rr-author-empty {
@@ -725,10 +729,24 @@
 
 /* Responsive */
 @media (max-width: 768px) {
+  .rr-modal.rr-modal-xlarge {
+    min-width: unset;
+    width: 95vw;
+  }
   .rr-modal-edit-layout {
     flex-direction: column;
   }
   .rr-modal-author-panel {
     width: 100%;
+  }
+}
+
+@media (max-width: 600px) {
+  .rr-modal-preview-container {
+    max-height: 200px;
+  }
+  .rr-author-cover-large {
+    width: 80px;
+    height: 110px;
   }
 }
