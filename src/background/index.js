@@ -1560,7 +1560,77 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             await db.deleteById(storeName, item.id);
           }
         }
+        // Also clear scan/import states in chrome.storage.local
+        await chrome.storage.local.remove([SCAN_STATE_KEY, IMPORT_STATE_KEY, SWAP_CHECK_STATE_KEY]);
         sendResponse({ success: true });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  // Writers Guild import
+  if (message.type === 'importGuildShoutouts') {
+    (async () => {
+      try {
+        await ensureDB();
+        const entries = message.entries || [];
+        let imported = 0;
+
+        // Get existing shoutouts to check for duplicates
+        const existingShoutouts = await db.getAll('shoutouts');
+
+        for (const entry of entries) {
+          try {
+            // Extract fiction ID from the shoutout code
+            const fictionIdMatch = entry.code.match(/\/fiction\/(\d+)/);
+            if (!fictionIdMatch) continue;
+
+            const fictionId = fictionIdMatch[1];
+
+            // Check for duplicate (same fictionId and date)
+            const isDuplicate = existingShoutouts.some(s =>
+              s.fictionId === fictionId &&
+              s.schedules?.some(sch => sch.date === entry.date)
+            );
+
+            if (isDuplicate) continue;
+
+            // Fetch fiction details
+            const details = await fetchFictionDetails(fictionId);
+
+            // Create shoutout entry (without scheduling to a specific fiction)
+            const shoutout = {
+              code: entry.code,
+              fictionId,
+              fictionTitle: details?.fictionTitle || '',
+              fictionUrl: `https://www.royalroad.com/fiction/${fictionId}`,
+              coverUrl: details?.coverUrl || '',
+              authorName: details?.authorName || '',
+              authorAvatar: details?.authorAvatar || '',
+              profileUrl: details?.profileUrl || '',
+              schedules: [{
+                fictionId: null, // User will assign later
+                date: entry.date,
+                chapter: null,
+                chapterUrl: null
+              }],
+              expectedReturnDate: null,
+              swappedDate: null,
+              swappedChapter: null,
+              swappedChapterUrl: null,
+              lastSwapScanDate: null
+            };
+
+            await db.save('shoutouts', shoutout);
+            imported++;
+          } catch (err) {
+            console.error('[RR Companion BG] Error importing guild entry:', err);
+          }
+        }
+
+        sendResponse({ success: true, count: imported });
       } catch (err) {
         sendResponse({ success: false, error: err.message });
       }

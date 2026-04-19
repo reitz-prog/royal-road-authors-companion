@@ -31,10 +31,12 @@ export function SettingsModal({ isOpen, onClose, onClearAll }) {
 
   const [placement, setPlacement] = useState(settings.placement);
   const [timezone, setTimezone] = useState(settings.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const [writersGuildEnabled, setWritersGuildEnabled] = useState(settings.writersGuildEnabled || false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showDeleteDbConfirm, setShowDeleteDbConfirm] = useState(false);
 
   const handleSave = () => {
-    saveSettings({ placement, timezone });
+    saveSettings({ placement, timezone, writersGuildEnabled });
     logger.info('Settings saved');
     onClose();
   };
@@ -46,6 +48,22 @@ export function SettingsModal({ isOpen, onClose, onClearAll }) {
     setShowClearConfirm(false);
     onClearAll?.();
     onClose();
+  };
+
+  const handleDeleteDatabase = async () => {
+    logger.info('Deleting database');
+    setShowDeleteDbConfirm(false);
+
+    // Delete the IndexedDB database completely
+    const deleteRequest = indexedDB.deleteDatabase('rr-companion');
+    deleteRequest.onsuccess = () => {
+      logger.info('Database deleted');
+      // Reload the page to reinitialize
+      window.location.reload();
+    };
+    deleteRequest.onerror = () => {
+      logger.error('Failed to delete database');
+    };
   };
 
   const footer = (
@@ -128,6 +146,20 @@ export function SettingsModal({ isOpen, onClose, onClearAll }) {
             </p>
           </div>
 
+          <div class="rr-settings-group">
+            <label class="rr-settings-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={writersGuildEnabled}
+                onChange={(e) => setWritersGuildEnabled(e.target.checked)}
+              />
+              <span>Enable Writers Guild Integration</span>
+            </label>
+            <p class="rr-settings-description">
+              Import shoutouts from rrwritersguild.com/shoutouts/dashboard
+            </p>
+          </div>
+
           <div class="rr-settings-group rr-settings-danger">
             <div class="rr-settings-label">Danger Zone</div>
             <p class="rr-settings-description">
@@ -139,6 +171,13 @@ export function SettingsModal({ isOpen, onClose, onClearAll }) {
               onClick={() => setShowClearConfirm(true)}
             >
               Clear All Data
+            </button>
+            <button
+              class="btn btn-sm btn-outline-danger"
+              style={{ marginTop: '0.5rem', marginLeft: '0.5rem' }}
+              onClick={() => setShowDeleteDbConfirm(true)}
+            >
+              Delete Database
             </button>
           </div>
         </div>
@@ -161,6 +200,20 @@ export function SettingsModal({ isOpen, onClose, onClearAll }) {
           <p style="color: #dc3545;"><strong>This action cannot be undone.</strong></p>
         `}
         confirmLabel="Delete Everything"
+      />
+
+      <DangerConfirmDialog
+        isOpen={showDeleteDbConfirm}
+        onConfirm={handleDeleteDatabase}
+        onCancel={() => setShowDeleteDbConfirm(false)}
+        title="Delete Database"
+        message={`
+          <p><strong>Are you sure you want to delete the entire database?</strong></p>
+          <p>This will completely remove the IndexedDB database and reload the page.</p>
+          <p>Use this if you're experiencing database corruption issues.</p>
+          <p style="color: #dc3545;"><strong>This action cannot be undone.</strong></p>
+        `}
+        confirmLabel="Delete Database"
       />
     </>
   );

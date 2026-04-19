@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Author's Companion",
-  "version": "0.0.1",
+  "version": "0.1.1",
   "description": "Calendar-based shoutout swap scheduler for Royal Road authors",
   "permissions": [
     "storage",
@@ -9,7 +9,8 @@
     "offscreen"
   ],
   "host_permissions": [
-    "https://www.royalroad.com/*"
+    "https://www.royalroad.com/*",
+    "https://rrwritersguild.com/*"
   ],
   "background": {
     "service_worker": "dist/background.js",
@@ -23,6 +24,20 @@
       ],
       "js": ["dist/content.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://rrwritersguild.com/shoutouts/dashboard*"
+      ],
+      "js": ["dist/guild.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["guild.html", "dist/guild.js"],
+      "matches": ["https://www.royalroad.com/*"]
     }
   ],
   "action": {

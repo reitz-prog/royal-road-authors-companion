@@ -657,6 +657,9 @@
     // Global preferences
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     // User's local timezone by default
+    // Integrations
+    writersGuildEnabled: false,
+    // RR Writers Guild import
     // UI state
     schedulerCollapsed: false,
     contactsOpen: true,
@@ -37838,9 +37841,11 @@
     const settings = getSettings();
     const [placement, setPlacement] = d3(settings.placement);
     const [timezone, setTimezone] = d3(settings.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone);
+    const [writersGuildEnabled, setWritersGuildEnabled] = d3(settings.writersGuildEnabled || false);
     const [showClearConfirm, setShowClearConfirm] = d3(false);
+    const [showDeleteDbConfirm, setShowDeleteDbConfirm] = d3(false);
     const handleSave = () => {
-      saveSettings({ placement, timezone });
+      saveSettings({ placement, timezone, writersGuildEnabled });
       logger13.info("Settings saved");
       onClose();
     };
@@ -37851,6 +37856,18 @@
       setShowClearConfirm(false);
       onClearAll?.();
       onClose();
+    };
+    const handleDeleteDatabase = async () => {
+      logger13.info("Deleting database");
+      setShowDeleteDbConfirm(false);
+      const deleteRequest = indexedDB.deleteDatabase("rr-companion");
+      deleteRequest.onsuccess = () => {
+        logger13.info("Database deleted");
+        window.location.reload();
+      };
+      deleteRequest.onerror = () => {
+        logger13.error("Failed to delete database");
+      };
     };
     const footer = /* @__PURE__ */ u4(S, { children: [
       /* @__PURE__ */ u4("button", { class: "btn btn-secondary", onClick: onClose, children: "Cancel" }),
@@ -37923,6 +37940,20 @@
               ] }),
               /* @__PURE__ */ u4("p", { class: "rr-settings-description", children: "Automatically notify the other author via Discord when a swap is completed." })
             ] }),
+            /* @__PURE__ */ u4("div", { class: "rr-settings-group", children: [
+              /* @__PURE__ */ u4("label", { class: "rr-settings-label", style: { display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }, children: [
+                /* @__PURE__ */ u4(
+                  "input",
+                  {
+                    type: "checkbox",
+                    checked: writersGuildEnabled,
+                    onChange: (e4) => setWritersGuildEnabled(e4.target.checked)
+                  }
+                ),
+                /* @__PURE__ */ u4("span", { children: "Enable Writers Guild Integration" })
+              ] }),
+              /* @__PURE__ */ u4("p", { class: "rr-settings-description", children: "Import shoutouts from rrwritersguild.com/shoutouts/dashboard" })
+            ] }),
             /* @__PURE__ */ u4("div", { class: "rr-settings-group rr-settings-danger", children: [
               /* @__PURE__ */ u4("div", { class: "rr-settings-label", children: "Danger Zone" }),
               /* @__PURE__ */ u4("p", { class: "rr-settings-description", children: "Clear all data including contacts, shoutouts, and archives. Cannot be undone." }),
@@ -37933,6 +37964,15 @@
                   style: { marginTop: "0.5rem" },
                   onClick: () => setShowClearConfirm(true),
                   children: "Clear All Data"
+                }
+              ),
+              /* @__PURE__ */ u4(
+                "button",
+                {
+                  class: "btn btn-sm btn-outline-danger",
+                  style: { marginTop: "0.5rem", marginLeft: "0.5rem" },
+                  onClick: () => setShowDeleteDbConfirm(true),
+                  children: "Delete Database"
                 }
               )
             ] })
@@ -37959,20 +37999,38 @@
         `,
           confirmLabel: "Delete Everything"
         }
+      ),
+      /* @__PURE__ */ u4(
+        DangerConfirmDialog,
+        {
+          isOpen: showDeleteDbConfirm,
+          onConfirm: handleDeleteDatabase,
+          onCancel: () => setShowDeleteDbConfirm(false),
+          title: "Delete Database",
+          message: `
+          <p><strong>Are you sure you want to delete the entire database?</strong></p>
+          <p>This will completely remove the IndexedDB database and reload the page.</p>
+          <p>Use this if you're experiencing database corruption issues.</p>
+          <p style="color: #dc3545;"><strong>This action cannot be undone.</strong></p>
+        `,
+          confirmLabel: "Delete Database"
+        }
       )
     ] });
   }
 
   // src/shout_out_swapper/ui/export/ExportImportModal.jsx
   var logger14 = log.scope("export-import-modal");
-  function ExportImportModal({ isOpen, onClose, onComplete }) {
+  function ExportImportModal({ isOpen, onClose, onComplete, currentFictionId }) {
     const [exporting, setExporting] = d3(false);
     const [importing, setImporting] = d3(false);
+    const [importingGuild, setImportingGuild] = d3(false);
     const [progress, setProgress] = d3(null);
     const [result, setResult] = d3(null);
     const [error, setError] = d3(null);
     const fileInputRef = A2(null);
     const pollIntervalRef = A2(null);
+    const writersGuildEnabled = getSetting("writersGuildEnabled");
     y2(() => {
       if (!isOpen)
         return;
@@ -37988,7 +38046,7 @@
               duplicates: state.duplicates || 0,
               skipped: state.skipped || 0
             });
-          } else if (state.status === "complete") {
+          } else if (state.status === "complete" && importing) {
             setImporting(false);
             setProgress(null);
             setResult({
@@ -37997,9 +38055,6 @@
               details: state
             });
             onComplete?.();
-            setTimeout(() => {
-              onClose();
-            }, 1500);
           } else if (state.status === "error") {
             setImporting(false);
             setProgress(null);
@@ -38056,6 +38111,41 @@
           fileInputRef.current.value = "";
         }
       }
+    };
+    const handleWritersGuildImport = async () => {
+      setImportingGuild(true);
+      setError(null);
+      setResult(null);
+      const iframe = document.createElement("iframe");
+      iframe.src = "https://rrwritersguild.com/shoutouts/dashboard";
+      iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;";
+      document.body.appendChild(iframe);
+      const messageHandler = (message) => {
+        if (message.type === "guildImportResult") {
+          chrome.runtime.onMessage.removeListener(messageHandler);
+          setImportingGuild(false);
+          iframe.remove();
+          if (message.success) {
+            setResult({
+              type: "guild",
+              message: `Imported ${message.count} shoutouts from Writers Guild`,
+              details: { imported: message.count, duplicates: 0, skipped: 0, errors: [] }
+            });
+            onComplete?.();
+          } else {
+            setError(message.error || "Import failed");
+          }
+        }
+      };
+      chrome.runtime.onMessage.addListener(messageHandler);
+      setTimeout(() => {
+        chrome.runtime.onMessage.removeListener(messageHandler);
+        iframe.remove();
+        if (importingGuild) {
+          setImportingGuild(false);
+          setError("Import timed out. Make sure you are logged into Writers Guild.");
+        }
+      }, 3e4);
     };
     const handleClose = () => {
       setResult(null);
@@ -38138,6 +38228,28 @@
                 progress.skipped,
                 " skipped)"
               ] })
+            ] })
+          ] }),
+          writersGuildEnabled && /* @__PURE__ */ u4(S, { children: [
+            /* @__PURE__ */ u4("hr", {}),
+            /* @__PURE__ */ u4("div", { class: "rr-import-section", children: [
+              /* @__PURE__ */ u4("h5", { children: "Import from Writers Guild" }),
+              /* @__PURE__ */ u4("p", { class: "text-muted", children: "Import your scheduled shoutouts from rrwritersguild.com. Make sure you're logged in first." }),
+              /* @__PURE__ */ u4(
+                "button",
+                {
+                  class: "btn btn-secondary",
+                  onClick: handleWritersGuildImport,
+                  disabled: exporting || importing || importingGuild,
+                  children: importingGuild ? /* @__PURE__ */ u4(S, { children: [
+                    /* @__PURE__ */ u4("i", { class: "fa fa-spinner fa-spin" }),
+                    " Importing..."
+                  ] }) : /* @__PURE__ */ u4(S, { children: [
+                    /* @__PURE__ */ u4("i", { class: "fa fa-cloud-download" }),
+                    " Import from Writers Guild"
+                  ] })
+                }
+              )
             ] })
           ] }),
           result && /* @__PURE__ */ u4("div", { class: `alert alert-success mt-3`, children: [
@@ -38723,7 +38835,8 @@
               onShoutoutClick: handleShoutoutClick,
               onShoutoutDrop: handleShoutoutDrop,
               onReorder: handleReorder,
-              onScanComplete: () => loadData()
+              onScanComplete: () => loadData(),
+              onDeleteShoutout: handleDelete
             }
           ) }),
           /* @__PURE__ */ u4("div", { class: "rr-scheduler-resizer" }),
@@ -38820,7 +38933,8 @@
         {
           isOpen: exportImportOpen,
           onClose: () => setExportImportOpen(false),
-          onComplete: () => loadData(true)
+          onComplete: () => loadData(true),
+          currentFictionId: filterFictionId
         }
       ),
       /* @__PURE__ */ u4(

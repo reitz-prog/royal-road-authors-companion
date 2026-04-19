@@ -636,6 +636,7 @@ export function Layout({ routeType = 'main-dashboard' }) {
                 onShoutoutDrop={handleShoutoutDrop}
                 onReorder={handleReorder}
                 onScanComplete={() => loadData()}
+                onDeleteShoutout={handleDelete}
               />
             </div>
             <div class="rr-scheduler-resizer"></div>
@@ -727,6 +728,7 @@ export function Layout({ routeType = 'main-dashboard' }) {
         isOpen={exportImportOpen}
         onClose={() => setExportImportOpen(false)}
         onComplete={() => loadData(true)}
+        currentFictionId={filterFictionId}
       />
 
       <MyCodeModal

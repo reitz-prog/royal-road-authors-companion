@@ -21,7 +21,8 @@ const contentOptions = {
   ...commonOptions,
   entryPoints: {
     'content': 'src/content/index.jsx',
-    'popup': 'src/popup/index.jsx'
+    'popup': 'src/popup/index.jsx',
+    'guild': 'src/guild/index.js'
   },
   outdir: 'dist',
   format: 'iife'

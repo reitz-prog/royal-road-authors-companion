@@ -12,6 +12,9 @@ const DEFAULT_SETTINGS = {
   // Global preferences
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,  // User's local timezone by default
 
+  // Integrations
+  writersGuildEnabled: false,  // RR Writers Guild import
+
   // UI state
   schedulerCollapsed: false,
   contactsOpen: true,

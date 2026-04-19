@@ -3,18 +3,22 @@ import { h } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
 import { Modal } from '../../../common/ui/modal/Modal.jsx';
 import { exportToExcel, importFromExcel, getImportState } from '../../services/exportImport.js';
+import { getSetting } from '../../../common/settings/core.js';
 import { log } from '../../../common/logging/core.js';
 
 const logger = log.scope('export-import-modal');
 
-export function ExportImportModal({ isOpen, onClose, onComplete }) {
+export function ExportImportModal({ isOpen, onClose, onComplete, currentFictionId }) {
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [importingGuild, setImportingGuild] = useState(false);
   const [progress, setProgress] = useState(null);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const fileInputRef = useRef(null);
   const pollIntervalRef = useRef(null);
+
+  const writersGuildEnabled = getSetting('writersGuildEnabled');
 
   // Poll for import progress when modal is open
   useEffect(() => {
@@ -33,7 +37,8 @@ export function ExportImportModal({ isOpen, onClose, onComplete }) {
             duplicates: state.duplicates || 0,
             skipped: state.skipped || 0
           });
-        } else if (state.status === 'complete') {
+        } else if (state.status === 'complete' && importing) {
+          // Only show result if we were actively importing
           setImporting(false);
           setProgress(null);
           setResult({
@@ -42,10 +47,6 @@ export function ExportImportModal({ isOpen, onClose, onComplete }) {
             details: state
           });
           onComplete?.();
-          // Auto-close modal after showing success briefly
-          setTimeout(() => {
-            onClose();
-          }, 1500);
         } else if (state.status === 'error') {
           setImporting(false);
           setProgress(null);
@@ -115,6 +116,52 @@ export function ExportImportModal({ isOpen, onClose, onComplete }) {
         fileInputRef.current.value = '';
       }
     }
+  };
+
+  const handleWritersGuildImport = async () => {
+    setImportingGuild(true);
+    setError(null);
+    setResult(null);
+
+    // Create hidden iframe to load Writers Guild
+    const iframe = document.createElement('iframe');
+    iframe.src = 'https://rrwritersguild.com/shoutouts/dashboard';
+    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;';
+    document.body.appendChild(iframe);
+
+    // Listen for import result
+    const messageHandler = (message) => {
+      if (message.type === 'guildImportResult') {
+        chrome.runtime.onMessage.removeListener(messageHandler);
+        setImportingGuild(false);
+
+        // Remove iframe
+        iframe.remove();
+
+        if (message.success) {
+          setResult({
+            type: 'guild',
+            message: `Imported ${message.count} shoutouts from Writers Guild`,
+            details: { imported: message.count, duplicates: 0, skipped: 0, errors: [] }
+          });
+          onComplete?.();
+        } else {
+          setError(message.error || 'Import failed');
+        }
+      }
+    };
+
+    chrome.runtime.onMessage.addListener(messageHandler);
+
+    // Timeout after 30 seconds
+    setTimeout(() => {
+      chrome.runtime.onMessage.removeListener(messageHandler);
+      iframe.remove();
+      if (importingGuild) {
+        setImportingGuild(false);
+        setError('Import timed out. Make sure you are logged into Writers Guild.');
+      }
+    }, 30000);
   };
 
   const handleClose = () => {
@@ -194,6 +241,31 @@ export function ExportImportModal({ isOpen, onClose, onComplete }) {
             </div>
           )}
         </div>
+
+        {/* Writers Guild Section */}
+        {writersGuildEnabled && (
+          <>
+            <hr />
+            <div class="rr-import-section">
+              <h5>Import from Writers Guild</h5>
+              <p class="text-muted">
+                Import your scheduled shoutouts from rrwritersguild.com.
+                Make sure you're logged in first.
+              </p>
+              <button
+                class="btn btn-secondary"
+                onClick={handleWritersGuildImport}
+                disabled={exporting || importing || importingGuild}
+              >
+                {importingGuild ? (
+                  <><i class="fa fa-spinner fa-spin"></i> Importing...</>
+                ) : (
+                  <><i class="fa fa-cloud-download"></i> Import from Writers Guild</>
+                )}
+              </button>
+            </div>
+          </>
+        )}
 
         {/* Result */}
         {result && (
