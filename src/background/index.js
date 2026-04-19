@@ -2,6 +2,10 @@
 // Handles long-running scans and IndexedDB operations
 
 import * as db from '../common/db/core.js';
+import { log } from '../common/logging/core.js';
+
+const logger = log.scope('background');
+const authorLogger = log.scope('author-data');
 
 console.log('[RR Companion BG] Service worker loading...');
 
@@ -215,13 +219,17 @@ async function extractShoutoutsFromHtml(html, excludeFictionId) {
 
 async function fetchFictionDetails(fictionId) {
   const url = `https://www.royalroad.com/fiction/${fictionId}`;
+  authorLogger.info('Fetching fiction details', { fictionId, url });
 
   const response = await fetchWithRetry(url, { credentials: 'include' });
   if (!response.ok) {
+    authorLogger.error('Failed to fetch fiction page', { fictionId, status: response.status });
     throw new Error(`Failed to fetch fiction page: ${response.status}`);
   }
 
   const html = await response.text();
+  authorLogger.debug('Got HTML response', { fictionId, htmlLength: html.length });
+
   await ensureOffscreenDocument();
 
   const result = await chrome.runtime.sendMessage({
@@ -231,10 +239,25 @@ async function fetchFictionDetails(fictionId) {
   });
 
   if (!result?.success) {
+    authorLogger.error('Failed to parse fiction details', { fictionId, error: result?.error });
     throw new Error(result?.error || 'Failed to parse fiction details');
   }
 
-  return result.data;
+  const data = result.data;
+  authorLogger.info('Fiction details parsed', {
+    fictionId,
+    fictionTitle: data?.fictionTitle || '(empty)',
+    authorName: data?.authorName || '(empty)',
+    hasCover: !!data?.coverUrl,
+    hasProfile: !!data?.profileUrl,
+    hasAvatar: !!data?.authorAvatar
+  });
+
+  if (!data?.authorName) {
+    authorLogger.warn('Author name is empty after parse', { fictionId, data });
+  }
+
+  return data;
 }
 
 // ============ SCANNING LOGIC ============
@@ -497,12 +520,50 @@ async function runFullScan(myFictionId) {
       for (const shoutout of unswappedShoutouts) {
         swapsChecked++;
 
+        // Auto-heal: fetch missing author info
+        if (!shoutout.authorName && shoutout.fictionId) {
+          authorLogger.info('Auto-heal triggered - missing author', {
+            shoutoutId: shoutout.id,
+            fictionId: shoutout.fictionId,
+            fictionTitle: shoutout.fictionTitle
+          });
+          try {
+            const details = await fetchFictionDetails(shoutout.fictionId);
+            if (details?.authorName) {
+              const before = { authorName: shoutout.authorName, fictionTitle: shoutout.fictionTitle };
+              shoutout.authorName = details.authorName;
+              shoutout.fictionTitle = details.fictionTitle || shoutout.fictionTitle;
+              shoutout.coverUrl = details.coverUrl || shoutout.coverUrl;
+              shoutout.profileUrl = details.profileUrl || shoutout.profileUrl;
+              shoutout.authorAvatar = details.authorAvatar || shoutout.authorAvatar;
+              await db.save('shoutouts', shoutout);
+              authorLogger.info('Auto-heal SUCCESS', {
+                shoutoutId: shoutout.id,
+                before,
+                after: { authorName: shoutout.authorName, fictionTitle: shoutout.fictionTitle }
+              });
+            } else {
+              authorLogger.warn('Auto-heal FAILED - no author in response', {
+                shoutoutId: shoutout.id,
+                fictionId: shoutout.fictionId,
+                details
+              });
+            }
+          } catch (err) {
+            authorLogger.error('Auto-heal ERROR', {
+              shoutoutId: shoutout.id,
+              fictionId: shoutout.fictionId,
+              error: err.message
+            });
+          }
+        }
+
         await setScanState({
           status: 'scanning',
           phase: 'checkSwaps',
           current: swapsChecked,
           total: unswappedShoutouts.length,
-          currentTitle: `Checking swap: ${shoutout.authorName || 'Unknown'}`,
+          currentTitle: `Checking swap: ${shoutout.authorName || shoutout.fictionTitle || 'Unknown'}`,
           shoutoutsFound
         });
 
@@ -608,6 +669,44 @@ async function checkAllSwaps() {
     for (const shoutout of unswappedShoutouts) {
       swapsChecked++;
 
+      // Auto-heal: fetch missing author info
+      if (!shoutout.authorName && shoutout.fictionId) {
+        authorLogger.info('Auto-heal triggered (checkAllSwaps) - missing author', {
+          shoutoutId: shoutout.id,
+          fictionId: shoutout.fictionId,
+          fictionTitle: shoutout.fictionTitle
+        });
+        try {
+          const details = await fetchFictionDetails(shoutout.fictionId);
+          if (details?.authorName) {
+            const before = { authorName: shoutout.authorName, fictionTitle: shoutout.fictionTitle };
+            shoutout.authorName = details.authorName;
+            shoutout.fictionTitle = details.fictionTitle || shoutout.fictionTitle;
+            shoutout.coverUrl = details.coverUrl || shoutout.coverUrl;
+            shoutout.profileUrl = details.profileUrl || shoutout.profileUrl;
+            shoutout.authorAvatar = details.authorAvatar || shoutout.authorAvatar;
+            await db.save('shoutouts', shoutout);
+            authorLogger.info('Auto-heal SUCCESS (checkAllSwaps)', {
+              shoutoutId: shoutout.id,
+              before,
+              after: { authorName: shoutout.authorName, fictionTitle: shoutout.fictionTitle }
+            });
+          } else {
+            authorLogger.warn('Auto-heal FAILED (checkAllSwaps) - no author in response', {
+              shoutoutId: shoutout.id,
+              fictionId: shoutout.fictionId,
+              details
+            });
+          }
+        } catch (err) {
+          authorLogger.error('Auto-heal ERROR (checkAllSwaps)', {
+            shoutoutId: shoutout.id,
+            fictionId: shoutout.fictionId,
+            error: err.message
+          });
+        }
+      }
+
       // Update check state for this shoutout
       await updateShoutoutCheckState(shoutout.id, {
         status: 'checking',
@@ -622,7 +721,7 @@ async function checkAllSwaps() {
         type: 'checkAllSwapsProgress',
         current: swapsChecked,
         total: unswappedShoutouts.length,
-        authorName: shoutout.authorName || 'Unknown'
+        authorName: shoutout.authorName || shoutout.fictionTitle || 'Unknown'
       });
 
       // Broadcast per-shoutout progress

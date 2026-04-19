@@ -66,6 +66,24 @@ export function SettingsModal({ isOpen, onClose, onClearAll }) {
     };
   };
 
+  const handleDownloadLogs = async () => {
+    try {
+      const logsText = await log.getLogsAsText();
+      const blob = new Blob([logsText], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `rr-companion-logs-${new Date().toISOString().split('T')[0]}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      logger.info('Logs downloaded');
+    } catch (err) {
+      logger.error('Failed to download logs', err);
+    }
+  };
+
   const footer = (
     <>
       <button class="btn btn-secondary" onClick={onClose}>
@@ -158,6 +176,30 @@ export function SettingsModal({ isOpen, onClose, onClearAll }) {
             <p class="rr-settings-description">
               Import shoutouts from rrwritersguild.com/shoutouts/dashboard
             </p>
+          </div>
+
+          <div class="rr-settings-group">
+            <div class="rr-settings-label">Debug</div>
+            <p class="rr-settings-description">
+              Download or clear logs for troubleshooting.
+            </p>
+            <button
+              class="btn btn-sm btn-outline-secondary"
+              style={{ marginTop: '0.5rem' }}
+              onClick={handleDownloadLogs}
+            >
+              Download Logs
+            </button>
+            <button
+              class="btn btn-sm btn-outline-secondary"
+              style={{ marginTop: '0.5rem', marginLeft: '0.5rem' }}
+              onClick={async () => {
+                await log.clearLogs();
+                logger.info('Logs cleared');
+              }}
+            >
+              Clear Logs
+            </button>
           </div>
 
           <div class="rr-settings-group rr-settings-danger">

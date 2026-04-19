@@ -116,7 +116,31 @@ export const log = {
   },
 
   flush: flushToStorage,
-  isDev
+  isDev,
+
+  async getLogs() {
+    await flushToStorage();
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      const result = await chrome.storage.local.get('rrLogs');
+      return result.rrLogs || [];
+    }
+    return [];
+  },
+
+  async getLogsAsText() {
+    const logs = await this.getLogs();
+    return logs.map(e => {
+      const dataStr = e.data ? ` ${e.data}` : '';
+      return `[${new Date(e.t).toISOString()}] [${e.level}] [${e.module}] ${e.msg}${dataStr}`;
+    }).join('\n');
+  },
+
+  async clearLogs() {
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      await chrome.storage.local.remove('rrLogs');
+    }
+    logs = [];
+  }
 };
 
 export default log;

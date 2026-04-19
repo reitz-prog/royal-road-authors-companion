@@ -492,7 +492,28 @@
       };
     },
     flush: flushToStorage,
-    isDev
+    isDev,
+    async getLogs() {
+      await flushToStorage();
+      if (typeof chrome !== "undefined" && chrome.storage?.local) {
+        const result = await chrome.storage.local.get("rrLogs");
+        return result.rrLogs || [];
+      }
+      return [];
+    },
+    async getLogsAsText() {
+      const logs2 = await this.getLogs();
+      return logs2.map((e4) => {
+        const dataStr = e4.data ? ` ${e4.data}` : "";
+        return `[${new Date(e4.t).toISOString()}] [${e4.level}] [${e4.module}] ${e4.msg}${dataStr}`;
+      }).join("\n");
+    },
+    async clearLogs() {
+      if (typeof chrome !== "undefined" && chrome.storage?.local) {
+        await chrome.storage.local.remove("rrLogs");
+      }
+      logs = [];
+    }
   };
 
   // node_modules/preact/hooks/dist/hooks.module.js
@@ -36083,6 +36104,9 @@
           });
           onScanCompleteRef.current?.();
         }
+        if (message.type === "shoutoutFound") {
+          onScanCompleteRef.current?.();
+        }
         if (message.type === "importComplete") {
           setImportProgress({
             phase: "complete",
@@ -37904,6 +37928,23 @@
         logger13.error("Failed to delete database");
       };
     };
+    const handleDownloadLogs = async () => {
+      try {
+        const logsText = await log.getLogsAsText();
+        const blob = new Blob([logsText], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const a4 = document.createElement("a");
+        a4.href = url;
+        a4.download = `rr-companion-logs-${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.txt`;
+        document.body.appendChild(a4);
+        a4.click();
+        document.body.removeChild(a4);
+        URL.revokeObjectURL(url);
+        logger13.info("Logs downloaded");
+      } catch (err) {
+        logger13.error("Failed to download logs", err);
+      }
+    };
     const footer = /* @__PURE__ */ u4(S, { children: [
       /* @__PURE__ */ u4("button", { class: "btn btn-secondary", onClick: onClose, children: "Cancel" }),
       /* @__PURE__ */ u4("button", { class: "btn btn-primary", onClick: handleSave, children: "Save" })
@@ -37988,6 +38029,31 @@
                 /* @__PURE__ */ u4("span", { children: "Enable Writers Guild Integration" })
               ] }),
               /* @__PURE__ */ u4("p", { class: "rr-settings-description", children: "Import shoutouts from rrwritersguild.com/shoutouts/dashboard" })
+            ] }),
+            /* @__PURE__ */ u4("div", { class: "rr-settings-group", children: [
+              /* @__PURE__ */ u4("div", { class: "rr-settings-label", children: "Debug" }),
+              /* @__PURE__ */ u4("p", { class: "rr-settings-description", children: "Download or clear logs for troubleshooting." }),
+              /* @__PURE__ */ u4(
+                "button",
+                {
+                  class: "btn btn-sm btn-outline-secondary",
+                  style: { marginTop: "0.5rem" },
+                  onClick: handleDownloadLogs,
+                  children: "Download Logs"
+                }
+              ),
+              /* @__PURE__ */ u4(
+                "button",
+                {
+                  class: "btn btn-sm btn-outline-secondary",
+                  style: { marginTop: "0.5rem", marginLeft: "0.5rem" },
+                  onClick: async () => {
+                    await log.clearLogs();
+                    logger13.info("Logs cleared");
+                  },
+                  children: "Clear Logs"
+                }
+              )
             ] }),
             /* @__PURE__ */ u4("div", { class: "rr-settings-group rr-settings-danger", children: [
               /* @__PURE__ */ u4("div", { class: "rr-settings-label", children: "Danger Zone" }),

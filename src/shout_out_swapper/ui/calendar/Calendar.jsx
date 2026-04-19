@@ -494,6 +494,10 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
         // Trigger data refresh
         onScanCompleteRef.current?.();
       }
+      // Shoutout found during scan - refresh data incrementally
+      if (message.type === 'shoutoutFound') {
+        onScanCompleteRef.current?.();
+      }
       // Import complete
       if (message.type === 'importComplete') {
         setImportProgress({

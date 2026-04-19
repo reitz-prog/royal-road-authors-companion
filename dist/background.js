@@ -114,7 +114,133 @@ async function upsert(storeName, data) {
   });
 }
 
+// src/common/logging/core.js
+var MAX_LOGS = 1e4;
+var SEVEN_DAYS = 7 * 24 * 60 * 60 * 1e3;
+var isDev = typeof chrome !== "undefined" && chrome.runtime?.getManifest ? !("update_url" in chrome.runtime.getManifest()) : true;
+var logs = [];
+var flushTimeout = null;
+function formatTime() {
+  const d = /* @__PURE__ */ new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}.${String(d.getMilliseconds()).padStart(3, "0")}`;
+}
+function createEntry(level, module, msg, data) {
+  return {
+    t: Date.now(),
+    time: formatTime(),
+    level,
+    module,
+    msg,
+    data: data !== void 0 ? safeStringify(data) : void 0
+  };
+}
+function safeStringify(data) {
+  try {
+    return JSON.stringify(data, (key, val) => {
+      if (typeof val === "object" && val !== null) {
+        if (val instanceof Error)
+          return { message: val.message, stack: val.stack };
+      }
+      return val;
+    });
+  } catch {
+    return String(data);
+  }
+}
+function format(level, module, msg) {
+  return `[RR] [${formatTime()}] [${level}] [${module}] ${msg}`;
+}
+function toConsole(level, module, msg, data) {
+  const formatted = format(level, module, msg);
+  const args = data !== void 0 ? [formatted, data] : [formatted];
+  switch (level) {
+    case "ERROR":
+      console.error(...args);
+      break;
+    case "WARN":
+      console.warn(...args);
+      break;
+    default:
+      console.log(...args);
+  }
+}
+function scheduleFlush() {
+  if (flushTimeout)
+    return;
+  flushTimeout = setTimeout(() => {
+    flushTimeout = null;
+    flushToStorage();
+  }, 1e3);
+}
+async function flushToStorage() {
+  if (logs.length === 0)
+    return;
+  try {
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      const result = await chrome.storage.local.get("rrLogs");
+      let stored = result.rrLogs || [];
+      stored.push(...logs);
+      logs = [];
+      const cutoff = Date.now() - SEVEN_DAYS;
+      stored = stored.filter((e) => e.t > cutoff).slice(-MAX_LOGS);
+      await chrome.storage.local.set({ rrLogs: stored });
+    }
+  } catch (e) {
+    console.error("[RR] Log flush failed:", e);
+  }
+}
+function logAt(level, module, msg, data) {
+  const entry = createEntry(level, module, msg, data);
+  toConsole(level, module, msg, data);
+  if (level !== "DEBUG" || isDev) {
+    logs.push(entry);
+    scheduleFlush();
+  }
+}
+var log = {
+  error: (module, msg, data) => logAt("ERROR", module, msg, data),
+  warn: (module, msg, data) => logAt("WARN", module, msg, data),
+  info: (module, msg, data) => logAt("INFO", module, msg, data),
+  debug: (module, msg, data) => {
+    if (isDev)
+      logAt("DEBUG", module, msg, data);
+  },
+  scope(module) {
+    return {
+      error: (msg, data) => log.error(module, msg, data),
+      warn: (msg, data) => log.warn(module, msg, data),
+      info: (msg, data) => log.info(module, msg, data),
+      debug: (msg, data) => log.debug(module, msg, data)
+    };
+  },
+  flush: flushToStorage,
+  isDev,
+  async getLogs() {
+    await flushToStorage();
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      const result = await chrome.storage.local.get("rrLogs");
+      return result.rrLogs || [];
+    }
+    return [];
+  },
+  async getLogsAsText() {
+    const logs2 = await this.getLogs();
+    return logs2.map((e) => {
+      const dataStr = e.data ? ` ${e.data}` : "";
+      return `[${new Date(e.t).toISOString()}] [${e.level}] [${e.module}] ${e.msg}${dataStr}`;
+    }).join("\n");
+  },
+  async clearLogs() {
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      await chrome.storage.local.remove("rrLogs");
+    }
+    logs = [];
+  }
+};
+
 // src/background/index.js
+var logger = log.scope("background");
+var authorLogger = log.scope("author-data");
 console.log("[RR Companion BG] Service worker loading...");
 var SCAN_STATE_KEY = "scanState";
 var IMPORT_STATE_KEY = "importState";
@@ -269,11 +395,14 @@ async function extractShoutoutsFromHtml(html, excludeFictionId) {
 }
 async function fetchFictionDetails(fictionId) {
   const url = `https://www.royalroad.com/fiction/${fictionId}`;
+  authorLogger.info("Fetching fiction details", { fictionId, url });
   const response = await fetchWithRetry(url, { credentials: "include" });
   if (!response.ok) {
+    authorLogger.error("Failed to fetch fiction page", { fictionId, status: response.status });
     throw new Error(`Failed to fetch fiction page: ${response.status}`);
   }
   const html = await response.text();
+  authorLogger.debug("Got HTML response", { fictionId, htmlLength: html.length });
   await ensureOffscreenDocument();
   const result = await chrome.runtime.sendMessage({
     type: "parseFictionDetails",
@@ -281,9 +410,22 @@ async function fetchFictionDetails(fictionId) {
     fictionId
   });
   if (!result?.success) {
+    authorLogger.error("Failed to parse fiction details", { fictionId, error: result?.error });
     throw new Error(result?.error || "Failed to parse fiction details");
   }
-  return result.data;
+  const data = result.data;
+  authorLogger.info("Fiction details parsed", {
+    fictionId,
+    fictionTitle: data?.fictionTitle || "(empty)",
+    authorName: data?.authorName || "(empty)",
+    hasCover: !!data?.coverUrl,
+    hasProfile: !!data?.profileUrl,
+    hasAvatar: !!data?.authorAvatar
+  });
+  if (!data?.authorName) {
+    authorLogger.warn("Author name is empty after parse", { fictionId, data });
+  }
+  return data;
 }
 async function batchDownloadChapters(chapters, batchSize = 5, delayMs = 1e3, onProgress = null) {
   const results = /* @__PURE__ */ new Map();
@@ -490,12 +632,48 @@ async function runFullScan(myFictionId) {
       let swapsFound = 0;
       for (const shoutout of unswappedShoutouts) {
         swapsChecked++;
+        if (!shoutout.authorName && shoutout.fictionId) {
+          authorLogger.info("Auto-heal triggered - missing author", {
+            shoutoutId: shoutout.id,
+            fictionId: shoutout.fictionId,
+            fictionTitle: shoutout.fictionTitle
+          });
+          try {
+            const details = await fetchFictionDetails(shoutout.fictionId);
+            if (details?.authorName) {
+              const before = { authorName: shoutout.authorName, fictionTitle: shoutout.fictionTitle };
+              shoutout.authorName = details.authorName;
+              shoutout.fictionTitle = details.fictionTitle || shoutout.fictionTitle;
+              shoutout.coverUrl = details.coverUrl || shoutout.coverUrl;
+              shoutout.profileUrl = details.profileUrl || shoutout.profileUrl;
+              shoutout.authorAvatar = details.authorAvatar || shoutout.authorAvatar;
+              await save("shoutouts", shoutout);
+              authorLogger.info("Auto-heal SUCCESS", {
+                shoutoutId: shoutout.id,
+                before,
+                after: { authorName: shoutout.authorName, fictionTitle: shoutout.fictionTitle }
+              });
+            } else {
+              authorLogger.warn("Auto-heal FAILED - no author in response", {
+                shoutoutId: shoutout.id,
+                fictionId: shoutout.fictionId,
+                details
+              });
+            }
+          } catch (err) {
+            authorLogger.error("Auto-heal ERROR", {
+              shoutoutId: shoutout.id,
+              fictionId: shoutout.fictionId,
+              error: err.message
+            });
+          }
+        }
         await setScanState({
           status: "scanning",
           phase: "checkSwaps",
           current: swapsChecked,
           total: unswappedShoutouts.length,
-          currentTitle: `Checking swap: ${shoutout.authorName || "Unknown"}`,
+          currentTitle: `Checking swap: ${shoutout.authorName || shoutout.fictionTitle || "Unknown"}`,
           shoutoutsFound
         });
         try {
@@ -572,6 +750,42 @@ async function checkAllSwaps() {
     let swapsFound = 0;
     for (const shoutout of unswappedShoutouts) {
       swapsChecked++;
+      if (!shoutout.authorName && shoutout.fictionId) {
+        authorLogger.info("Auto-heal triggered (checkAllSwaps) - missing author", {
+          shoutoutId: shoutout.id,
+          fictionId: shoutout.fictionId,
+          fictionTitle: shoutout.fictionTitle
+        });
+        try {
+          const details = await fetchFictionDetails(shoutout.fictionId);
+          if (details?.authorName) {
+            const before = { authorName: shoutout.authorName, fictionTitle: shoutout.fictionTitle };
+            shoutout.authorName = details.authorName;
+            shoutout.fictionTitle = details.fictionTitle || shoutout.fictionTitle;
+            shoutout.coverUrl = details.coverUrl || shoutout.coverUrl;
+            shoutout.profileUrl = details.profileUrl || shoutout.profileUrl;
+            shoutout.authorAvatar = details.authorAvatar || shoutout.authorAvatar;
+            await save("shoutouts", shoutout);
+            authorLogger.info("Auto-heal SUCCESS (checkAllSwaps)", {
+              shoutoutId: shoutout.id,
+              before,
+              after: { authorName: shoutout.authorName, fictionTitle: shoutout.fictionTitle }
+            });
+          } else {
+            authorLogger.warn("Auto-heal FAILED (checkAllSwaps) - no author in response", {
+              shoutoutId: shoutout.id,
+              fictionId: shoutout.fictionId,
+              details
+            });
+          }
+        } catch (err) {
+          authorLogger.error("Auto-heal ERROR (checkAllSwaps)", {
+            shoutoutId: shoutout.id,
+            fictionId: shoutout.fictionId,
+            error: err.message
+          });
+        }
+      }
       await updateShoutoutCheckState(shoutout.id, {
         status: "checking",
         current: 0,
@@ -583,7 +797,7 @@ async function checkAllSwaps() {
         type: "checkAllSwapsProgress",
         current: swapsChecked,
         total: unswappedShoutouts.length,
-        authorName: shoutout.authorName || "Unknown"
+        authorName: shoutout.authorName || shoutout.fictionTitle || "Unknown"
       });
       broadcastToTabs({
         type: "swapCheckProgress",
