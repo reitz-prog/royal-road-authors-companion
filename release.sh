@@ -16,11 +16,26 @@ echo "Version from manifest: $VERSION"
 echo "Building project..."
 npm run build
 
+# Create ZIP for distribution
+ZIP_NAME="authors-companion-v$VERSION.zip"
+echo "Creating $ZIP_NAME..."
+rm -f "$ZIP_NAME"
+zip -r "$ZIP_NAME" manifest.json popup.html offscreen.html offscreen.js dist/ icons/
+
 # Create the release
 echo "Creating release v$VERSION..."
 gh release create "v$VERSION" \
     --title "v$VERSION" \
-    --generate-notes \
-    dist/*
+    --notes "## Installation
+
+1. Download **$ZIP_NAME**
+2. Unzip the file
+3. Go to \`chrome://extensions\`
+4. Enable **Developer mode**
+5. Click **Load unpacked** and select the unzipped folder" \
+    "$ZIP_NAME"
+
+# Cleanup
+rm -f "$ZIP_NAME"
 
 echo "Release v$VERSION created successfully!"
