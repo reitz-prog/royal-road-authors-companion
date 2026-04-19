@@ -183,47 +183,63 @@ function parseFictionDetails(html, fictionId) {
   let authorName = '';
   let authorAvatar = '';
   let profileUrl = '';
-
-  const authorLinks = doc.querySelectorAll('a[href*="/profile/"]');
   let profileId = null;
 
-  for (const link of authorLinks) {
-    const h4 = link.querySelector('h4.text-on-surface-strong');
-    if (h4) {
-      const href = link.getAttribute('href');
-      const match = href.match(/\/profile\/(\d+)/);
-      if (match) {
-        profileId = match[1];
-        authorName = h4.textContent.trim();
-        profileUrl = href.startsWith('http') ? href : `https://www.royalroad.com${href}`;
-        break;
+  // Step 1: Get author name from meta tag (most reliable)
+  const authorMeta = doc.querySelector('meta[property="books:author"], meta[name="author"]');
+  if (authorMeta) {
+    authorName = authorMeta.getAttribute('content') || '';
+    console.log('[RR Offscreen] Got author name from meta:', authorName);
+  }
+
+  // Step 2: Find profile link containing the author name to get profileId
+  if (authorName) {
+    const allProfileLinks = doc.querySelectorAll('a[href*="/profile/"]');
+    for (const link of allProfileLinks) {
+      const text = link.textContent.trim();
+      if (text === authorName || text.includes(authorName)) {
+        const href = link.getAttribute('href') || '';
+        const match = href.match(/\/profile\/(\d+)/);
+        if (match) {
+          profileId = match[1];
+          profileUrl = `https://www.royalroad.com/profile/${profileId}`;
+          console.log('[RR Offscreen] Found profile link for author:', { authorName, profileId });
+          break;
+        }
       }
     }
   }
 
+  // Step 3: Find avatar matching the profileId
   if (profileId) {
-    for (const link of authorLinks) {
-      const href = link.getAttribute('href') || '';
-      if (href.includes(`/profile/${profileId}`)) {
-        const avatarImg = link.querySelector('img[data-type="avatar"]');
-        if (avatarImg) {
-          authorAvatar = avatarImg.getAttribute('src') || '';
-          break;
-        }
-      }
+    const avatarPattern = new RegExp(`avatars/avatar-${profileId}-[^"'\\s]+`);
+    const avatarMatch = html.match(avatarPattern);
+    if (avatarMatch) {
+      authorAvatar = 'https://www.royalroadcdn.com/public/' + avatarMatch[0];
+      console.log('[RR Offscreen] Found matching avatar for profileId:', profileId);
     }
+  }
 
-    if (!authorAvatar) {
-      const avatarImgs = doc.querySelectorAll(`img[src*="/profile/${profileId}"], img[src*="avatar"]`);
-      for (const img of avatarImgs) {
-        const src = img.getAttribute('src') || '';
-        if (src && !src.includes('cover')) {
-          authorAvatar = src;
+  // Fallback: if no profileId yet, try finding from profile links with h4
+  if (!profileId) {
+    const authorLinks = doc.querySelectorAll('a[href*="/profile/"]');
+    for (const link of authorLinks) {
+      const h4 = link.querySelector('h4');
+      if (h4) {
+        const href = link.getAttribute('href') || '';
+        const match = href.match(/\/profile\/(\d+)/);
+        if (match) {
+          profileId = match[1];
+          profileUrl = `https://www.royalroad.com/profile/${profileId}`;
+          if (!authorName) authorName = h4.textContent.trim();
+          console.log('[RR Offscreen] Found author from h4 fallback:', { authorName, profileId });
           break;
         }
       }
     }
   }
+
+  console.log('[RR Offscreen] parseFictionDetails result:', { fictionId, fictionTitle, authorName, profileId, hasAvatar: !!authorAvatar });
 
   return {
     fictionId,
