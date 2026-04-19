@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Royal Road Author Companion",
-  "version": "3.0.0",
+  "name": "Author's Companion",
+  "version": "0.0.1",
   "description": "Calendar-based shoutout swap scheduler for Royal Road authors",
   "permissions": [
     "storage",
@@ -27,10 +27,11 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "RR Author Companion"
+    "default_title": "Author's Companion"
   },
   "icons": {
     "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
+    "128": "icons/icon128.png",
+    "192": "icons/rrlogo.png"
   }
 }
