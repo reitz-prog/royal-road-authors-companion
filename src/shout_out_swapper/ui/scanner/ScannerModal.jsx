@@ -160,12 +160,12 @@ export function ScannerModal({
   }, [stopPolling]);
 
   const handleClose = () => {
-    if (!scanning) {
-      setProgress(null);
-      setResults([]);
-      setSummary(null);
-      onClose();
-    }
+    // Allow closing even while scanning - scan continues in background
+    setProgress(null);
+    setResults([]);
+    setSummary(null);
+    stopPolling();
+    onClose();
   };
 
   const footer = (
