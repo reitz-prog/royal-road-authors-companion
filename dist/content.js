@@ -35039,10 +35039,46 @@
 
   // src/common/utils/fetch.js
   var logger4 = log.scope("fetch");
+  function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+  async function fetchWithRetry(url, options = {}, maxRetries = 3, baseDelay = 1e3) {
+    let lastError;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await fetch(url, options);
+        if (response.status === 429 || response.status >= 500 && response.status < 600) {
+          if (attempt < maxRetries) {
+            const delayMs = baseDelay * Math.pow(2, attempt);
+            logger4.warn(`Rate limited or server error, retrying in ${delayMs}ms`, {
+              url,
+              status: response.status,
+              attempt: attempt + 1
+            });
+            await delay(delayMs);
+            continue;
+          }
+        }
+        return response;
+      } catch (err) {
+        lastError = err;
+        if (attempt < maxRetries) {
+          const delayMs = baseDelay * Math.pow(2, attempt);
+          logger4.warn(`Fetch failed, retrying in ${delayMs}ms`, {
+            url,
+            error: err.message,
+            attempt: attempt + 1
+          });
+          await delay(delayMs);
+        }
+      }
+    }
+    throw lastError || new Error("Fetch failed after retries");
+  }
   async function fetchPage(url) {
     try {
       logger4.debug("Fetching page", { url });
-      const response = await fetch(url, {
+      const response = await fetchWithRetry(url, {
         credentials: "include",
         headers: { "Accept": "text/html" }
       });
@@ -35054,7 +35090,7 @@
       const parser = new DOMParser();
       return parser.parseFromString(html, "text/html");
     } catch (err) {
-      logger4.error("Fetch error", { url, error: err.message });
+      logger4.error("Fetch error after retries", { url, error: err.message });
       return null;
     }
   }

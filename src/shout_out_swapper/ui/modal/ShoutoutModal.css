@@ -153,8 +153,9 @@
 
 /* Author panel */
 .rr-modal-author-panel {
-  flex: 0 0 auto;
-  width: clamp(200px, 30%, 280px);
+  flex: 0 1 auto;
+  width: clamp(180px, 35%, 280px);
+  min-width: 180px;
   border: 1px solid rgba(128, 128, 128, 0.2);
   border-radius: 8px;
   min-height: 150px;
@@ -216,13 +217,14 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: 1.5rem;
+  padding: clamp(0.75rem, 3vw, 1.5rem);
   gap: 0.5rem;
 }
 
 .rr-author-cover-large {
-  width: 120px;
-  height: 170px;
+  width: clamp(80px, 50%, 120px);
+  height: auto;
+  aspect-ratio: 120 / 170;
   object-fit: cover;
   border-radius: 6px;
   margin-bottom: 0.5rem;
@@ -230,7 +232,8 @@
 
 .rr-author-fiction-large {
   font-weight: 600;
-  font-size: 1.1rem;
+  font-size: clamp(0.9rem, 2.5vw, 1.1rem);
+  word-break: break-word;
 }
 
 .rr-view-fiction-btn {
@@ -263,11 +266,12 @@
 .rr-scheduled-for-item {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
   padding: 0.35rem 0.5rem;
   background: rgba(51, 122, 183, 0.1);
   border-radius: 4px;
-  font-size: 0.8rem;
+  font-size: clamp(0.7rem, 2vw, 0.8rem);
 }
 
 .rr-scheduled-for-item.rr-archived {
@@ -276,7 +280,7 @@
 
 .rr-scheduled-fiction-title {
   font-weight: 500;
-  flex: 1;
+  flex: 1 1 100%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -566,9 +570,9 @@
 
 .rr-swap-badge {
   display: inline-block;
-  padding: 0.25rem 0.75rem;
+  padding: 0.25rem 0.5rem;
   border-radius: 4px;
-  font-size: 0.75rem;
+  font-size: clamp(0.65rem, 2vw, 0.75rem);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -681,14 +685,15 @@
 /* Swap Found Info */
 .rr-swap-found {
   margin-top: 1rem;
-  padding: 0.75rem;
+  padding: clamp(0.5rem, 2vw, 0.75rem);
   background: rgba(40, 167, 69, 0.1);
   border-radius: 6px;
   border: 1px solid rgba(40, 167, 69, 0.3);
+  word-break: break-word;
 }
 
 .rr-swap-found-label {
-  font-size: 0.85rem;
+  font-size: clamp(0.75rem, 2vw, 0.85rem);
   color: #28a745;
 }
 
@@ -738,6 +743,23 @@
   }
   .rr-modal-author-panel {
     width: 100%;
+    max-width: 100%;
+  }
+  .rr-author-card-large {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 1rem;
+  }
+  .rr-author-cover-large {
+    width: 80px;
+    flex-shrink: 0;
+  }
+  .rr-scheduled-for-section {
+    width: 100%;
+  }
+  .rr-swap-section {
+    width: 100%;
   }
 }
 
@@ -745,8 +767,7 @@
   .rr-modal-preview-container {
     max-height: 200px;
   }
-  .rr-author-cover-large {
-    width: 80px;
-    height: 110px;
+  .rr-author-card-large {
+    flex-direction: column;
   }
 }
