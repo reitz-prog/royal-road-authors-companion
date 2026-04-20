@@ -244,11 +244,34 @@
   border-radius: 4px;
   background: rgba(128, 128, 128, 0.05);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, opacity 0.15s, border-color 0.15s;
+  border: 2px solid transparent;
 }
 
 .rr-mycode-item:hover {
   background: rgba(128, 128, 128, 0.1);
+}
+
+.rr-mycode-drag-handle {
+  cursor: grab;
+  color: rgba(128, 128, 128, 0.4);
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+}
+
+.rr-mycode-drag-handle:hover {
+  color: rgba(128, 128, 128, 0.8);
+}
+
+.rr-mycode-item.rr-mycode-dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+.rr-mycode-item.rr-mycode-dragover {
+  border-color: #337ab7;
+  background: rgba(51, 122, 183, 0.15);
 }
 
 .rr-mycode-info {

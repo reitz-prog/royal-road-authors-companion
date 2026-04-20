@@ -8,9 +8,12 @@ export function MyCodes({
   onMyCodeAdd,
   onMyCodeEdit,
   onMyCodeCopy,
-  onMyCodeDelete
+  onMyCodeDelete,
+  onMyCodeReorder
 }) {
   const [copiedId, setCopiedId] = useState(null);
+  const [draggedId, setDraggedId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
 
   const handleCopy = (code) => {
     if (code?.code) {
@@ -19,6 +22,46 @@ export function MyCodes({
       setTimeout(() => setCopiedId(null), 1500);
       onMyCodeCopy?.(code);
     }
+  };
+
+  const handleDragStart = (e, code) => {
+    setDraggedId(code.id);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', code.id);
+  };
+
+  const handleDragOver = (e, code) => {
+    e.preventDefault();
+    if (draggedId && draggedId !== code.id) {
+      setDragOverId(code.id);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverId(null);
+  };
+
+  const handleDrop = (e, targetCode) => {
+    e.preventDefault();
+    if (draggedId && draggedId !== targetCode.id) {
+      // Reorder: move dragged item to target position
+      const draggedIndex = myCodes.findIndex(c => c.id === draggedId);
+      const targetIndex = myCodes.findIndex(c => c.id === targetCode.id);
+
+      if (draggedIndex !== -1 && targetIndex !== -1) {
+        const newOrder = [...myCodes];
+        const [removed] = newOrder.splice(draggedIndex, 1);
+        newOrder.splice(targetIndex, 0, removed);
+        onMyCodeReorder?.(newOrder);
+      }
+    }
+    setDraggedId(null);
+    setDragOverId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedId(null);
+    setDragOverId(null);
   };
 
   return (
@@ -36,13 +79,26 @@ export function MyCodes({
           myCodes.map(c => {
             const fiction = myFictions.find(f => String(f.fictionId) === String(c.fictionId));
             const displayName = c.name || fiction?.title || 'My Code';
-            const coverUrl = fiction?.coverUrl;
+            // Extract image directly from stored code HTML
+            const imgMatch = c.code?.match(/<img[^>]+src=["']([^"']+)["']/i);
+            const coverUrl = imgMatch?.[1] || fiction?.coverUrl;
+            const isDragging = draggedId === c.id;
+            const isDragOver = dragOverId === c.id;
             return (
               <div
                 key={c.id}
-                class="rr-mycode-item"
+                class={`rr-mycode-item ${isDragging ? 'rr-mycode-dragging' : ''} ${isDragOver ? 'rr-mycode-dragover' : ''}`}
                 onClick={() => onMyCodeEdit?.(c.id)}
+                draggable
+                onDragStart={(e) => handleDragStart(e, c)}
+                onDragOver={(e) => handleDragOver(e, c)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, c)}
+                onDragEnd={handleDragEnd}
               >
+                <div class="rr-mycode-drag-handle">
+                  <i class="fa fa-grip-vertical"></i>
+                </div>
                 {coverUrl ? (
                   <img src={coverUrl} alt="" class="rr-mycode-cover" />
                 ) : (

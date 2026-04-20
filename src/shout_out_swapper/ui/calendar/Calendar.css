@@ -212,6 +212,11 @@
   position: relative;
 }
 
+/* Grid wrapper - contains grid and edge nav zones */
+.rr-calendar-grid-wrapper {
+  position: relative;
+}
+
 /* Grid */
 .rr-calendar-grid {
   border: 1px solid rgba(128, 128, 128, 0.2);

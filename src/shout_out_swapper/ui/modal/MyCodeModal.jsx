@@ -55,20 +55,31 @@ export function MyCodeModal({
     }
   }, [showPreview]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const actualCode = textareaRef.current?.value || code;
+
+    // Extract first image from code HTML
+    let codeImageUrl = '';
+    const imgMatch = actualCode.match(/<img[^>]+src=["']([^"']+)["']/i);
+    if (imgMatch) {
+      codeImageUrl = imgMatch[1];
+    }
+
     logger.info('Saving code', {
       hasRef: !!textareaRef.current,
       codeLength: actualCode?.length,
       name,
       fictionId,
+      codeImageUrl,
       existingId: myCode?.id
     });
-    onSave?.({
+    await onSave?.({
+      ...myCode,  // Preserve existing fields like order
       id: myCode?.id,
       code: actualCode,
       name,
-      fictionId
+      fictionId,
+      codeImageUrl
     });
     onClose();
   };
@@ -77,8 +88,8 @@ export function MyCodeModal({
     setShowDeleteConfirm(true);
   };
 
-  const handleDeleteConfirm = () => {
-    onDelete?.(myCode?.id);
+  const handleDeleteConfirm = async () => {
+    await onDelete?.(myCode?.id);
     setShowDeleteConfirm(false);
     onClose();
   };

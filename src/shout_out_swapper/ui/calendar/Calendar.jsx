@@ -656,13 +656,14 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
       <div class="rr-view-content">
         {currentView === 'calendar' && (
           <div class="rr-calendar-view">
-            <div class="rr-cal-edge rr-cal-edge-left" onClick={prevMonth}>
-              <i class="fa fa-chevron-left"></i>
-            </div>
-            <div class="rr-cal-edge rr-cal-edge-right" onClick={nextMonth}>
-              <i class="fa fa-chevron-right"></i>
-            </div>
-            <div class="rr-calendar-grid">
+            <div class="rr-calendar-grid-wrapper">
+              <div class="rr-cal-edge rr-cal-edge-left" onClick={prevMonth}>
+                <i class="fa fa-chevron-left"></i>
+              </div>
+              <div class="rr-cal-edge rr-cal-edge-right" onClick={nextMonth}>
+                <i class="fa fa-chevron-right"></i>
+              </div>
+              <div class="rr-calendar-grid">
               <div class="rr-calendar-weekdays">
                 {DAYS.map(day => (
                   <div key={day} class="rr-weekday">{day}</div>
@@ -768,6 +769,7 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
                   <div key={`empty-end-${i}`} class="rr-day rr-day-empty"></div>
                 ))}
               </div>
+            </div>
             </div>
 
             {/* Unscheduled section - integrated into calendar with drag-drop */}

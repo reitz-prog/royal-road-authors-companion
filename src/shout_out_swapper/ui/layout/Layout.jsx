@@ -131,7 +131,9 @@ export function Layout({ routeType = 'main-dashboard' }) {
 
       setShoutouts(loadedShoutouts || []);
       setContacts(enrichedContacts);
-      setMyCodes(loadedMyCodes || []);
+      // Sort myCodes by order field
+      const sortedMyCodes = (loadedMyCodes || []).sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+      setMyCodes(sortedMyCodes);
       if (!resyncFictions) {
         setMyFictions(loadedMyFictions || []);
       }
@@ -662,6 +664,14 @@ export function Layout({ routeType = 'main-dashboard' }) {
                 onMyCodeDelete={async (id) => {
                   await db.deleteById('myCodes', id);
                   await loadData();
+                }}
+                onMyCodeReorder={async (newOrder) => {
+                  // Save new order to each code
+                  for (let i = 0; i < newOrder.length; i++) {
+                    const code = newOrder[i];
+                    await db.save('myCodes', { ...code, order: i });
+                  }
+                  setMyCodes(newOrder);
                 }}
               />
               <Contacts

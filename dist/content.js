@@ -36284,90 +36284,92 @@
       ] }),
       /* @__PURE__ */ u4("div", { class: "rr-view-content", children: [
         currentView === "calendar" && /* @__PURE__ */ u4("div", { class: "rr-calendar-view", children: [
-          /* @__PURE__ */ u4("div", { class: "rr-cal-edge rr-cal-edge-left", onClick: prevMonth, children: /* @__PURE__ */ u4("i", { class: "fa fa-chevron-left" }) }),
-          /* @__PURE__ */ u4("div", { class: "rr-cal-edge rr-cal-edge-right", onClick: nextMonth, children: /* @__PURE__ */ u4("i", { class: "fa fa-chevron-right" }) }),
-          /* @__PURE__ */ u4("div", { class: "rr-calendar-grid", children: [
-            /* @__PURE__ */ u4("div", { class: "rr-calendar-weekdays", children: DAYS.map((day) => /* @__PURE__ */ u4("div", { class: "rr-weekday", children: day }, day)) }),
-            /* @__PURE__ */ u4("div", { class: "rr-calendar-days", children: [
-              Array.from({ length: firstDay }, (_3, i5) => /* @__PURE__ */ u4("div", { class: "rr-day rr-day-empty" }, `empty-${i5}`)),
-              Array.from({ length: daysInMonth }, (_3, i5) => {
-                const day = i5 + 1;
-                const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-                const isToday = day === today.getDate() && month === today.getMonth() && year === today.getFullYear();
-                const thisDate = new Date(year, month, day);
-                thisDate.setHours(0, 0, 0, 0);
-                const todayStart = new Date(today);
-                todayStart.setHours(0, 0, 0, 0);
-                const isPast = thisDate < todayStart;
-                const dayShoutouts = shoutoutsByDate.get(dateStr) || [];
-                const handleDayClick = (e4) => {
-                  if (dayShoutouts.length > 1) {
-                    const rect = e4.currentTarget.getBoundingClientRect();
-                    setStackPopover({
-                      isOpen: true,
-                      date: dateStr,
-                      shoutouts: dayShoutouts,
-                      position: { x: rect.right + 10, y: rect.top }
-                    });
-                  } else if (isPast && dayShoutouts.length === 1) {
-                    onShoutoutClick?.(dayShoutouts[0], dateStr, "view");
-                  } else if (!isPast) {
-                    onDayClick?.(dateStr, dayShoutouts);
-                  }
-                };
-                return /* @__PURE__ */ u4(
-                  "div",
-                  {
-                    class: `rr-day ${isToday ? "rr-day-today" : ""} ${isPast ? "rr-day-past" : ""} ${dragOverDate === dateStr ? "rr-day-drag-over" : ""}`,
-                    "data-date": dateStr,
-                    onClick: handleDayClick,
-                    onDragOver: isPast ? void 0 : (e4) => handleDragOver(e4, dateStr),
-                    onDragLeave: isPast ? void 0 : handleDragLeave,
-                    onDrop: isPast ? void 0 : (e4) => handleDrop(e4, dateStr),
-                    children: [
-                      /* @__PURE__ */ u4("span", { class: "rr-day-number", children: day }),
-                      /* @__PURE__ */ u4("div", { class: "rr-day-events", children: [
-                        dayShoutouts.slice(0, 3).map((s4, idx) => {
-                          const isArchived = s4.schedules?.some(
-                            (sched) => sched.date === dateStr && sched.chapter
-                          );
-                          const checkState = swapCheckStates[s4.id];
-                          return /* @__PURE__ */ u4(
-                            CalendarCard,
-                            {
-                              shoutout: s4,
-                              checkState,
-                              isArchived: isPast || isArchived,
-                              sourceDate: dateStr,
-                              onClick: (e4) => {
-                                e4.stopPropagation();
-                                logger8.info("Card clicked", { dateStr, shoutoutCount: dayShoutouts.length, shoutoutId: s4.id });
-                                if (dayShoutouts.length > 1) {
-                                  const dayEl = e4.currentTarget.closest(".rr-day");
-                                  const rect = dayEl ? dayEl.getBoundingClientRect() : { right: 200, top: 200 };
-                                  logger8.info("Opening stack popover", { dateStr, rect, shoutoutCount: dayShoutouts.length });
-                                  setStackPopover({
-                                    isOpen: true,
-                                    date: dateStr,
-                                    shoutouts: dayShoutouts,
-                                    position: { x: rect.right + 10, y: rect.top }
-                                  });
-                                } else {
-                                  onShoutoutClick?.(s4, dateStr, isPast || isArchived ? "view" : "edit");
+          /* @__PURE__ */ u4("div", { class: "rr-calendar-grid-wrapper", children: [
+            /* @__PURE__ */ u4("div", { class: "rr-cal-edge rr-cal-edge-left", onClick: prevMonth, children: /* @__PURE__ */ u4("i", { class: "fa fa-chevron-left" }) }),
+            /* @__PURE__ */ u4("div", { class: "rr-cal-edge rr-cal-edge-right", onClick: nextMonth, children: /* @__PURE__ */ u4("i", { class: "fa fa-chevron-right" }) }),
+            /* @__PURE__ */ u4("div", { class: "rr-calendar-grid", children: [
+              /* @__PURE__ */ u4("div", { class: "rr-calendar-weekdays", children: DAYS.map((day) => /* @__PURE__ */ u4("div", { class: "rr-weekday", children: day }, day)) }),
+              /* @__PURE__ */ u4("div", { class: "rr-calendar-days", children: [
+                Array.from({ length: firstDay }, (_3, i5) => /* @__PURE__ */ u4("div", { class: "rr-day rr-day-empty" }, `empty-${i5}`)),
+                Array.from({ length: daysInMonth }, (_3, i5) => {
+                  const day = i5 + 1;
+                  const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                  const isToday = day === today.getDate() && month === today.getMonth() && year === today.getFullYear();
+                  const thisDate = new Date(year, month, day);
+                  thisDate.setHours(0, 0, 0, 0);
+                  const todayStart = new Date(today);
+                  todayStart.setHours(0, 0, 0, 0);
+                  const isPast = thisDate < todayStart;
+                  const dayShoutouts = shoutoutsByDate.get(dateStr) || [];
+                  const handleDayClick = (e4) => {
+                    if (dayShoutouts.length > 1) {
+                      const rect = e4.currentTarget.getBoundingClientRect();
+                      setStackPopover({
+                        isOpen: true,
+                        date: dateStr,
+                        shoutouts: dayShoutouts,
+                        position: { x: rect.right + 10, y: rect.top }
+                      });
+                    } else if (isPast && dayShoutouts.length === 1) {
+                      onShoutoutClick?.(dayShoutouts[0], dateStr, "view");
+                    } else if (!isPast) {
+                      onDayClick?.(dateStr, dayShoutouts);
+                    }
+                  };
+                  return /* @__PURE__ */ u4(
+                    "div",
+                    {
+                      class: `rr-day ${isToday ? "rr-day-today" : ""} ${isPast ? "rr-day-past" : ""} ${dragOverDate === dateStr ? "rr-day-drag-over" : ""}`,
+                      "data-date": dateStr,
+                      onClick: handleDayClick,
+                      onDragOver: isPast ? void 0 : (e4) => handleDragOver(e4, dateStr),
+                      onDragLeave: isPast ? void 0 : handleDragLeave,
+                      onDrop: isPast ? void 0 : (e4) => handleDrop(e4, dateStr),
+                      children: [
+                        /* @__PURE__ */ u4("span", { class: "rr-day-number", children: day }),
+                        /* @__PURE__ */ u4("div", { class: "rr-day-events", children: [
+                          dayShoutouts.slice(0, 3).map((s4, idx) => {
+                            const isArchived = s4.schedules?.some(
+                              (sched) => sched.date === dateStr && sched.chapter
+                            );
+                            const checkState = swapCheckStates[s4.id];
+                            return /* @__PURE__ */ u4(
+                              CalendarCard,
+                              {
+                                shoutout: s4,
+                                checkState,
+                                isArchived: isPast || isArchived,
+                                sourceDate: dateStr,
+                                onClick: (e4) => {
+                                  e4.stopPropagation();
+                                  logger8.info("Card clicked", { dateStr, shoutoutCount: dayShoutouts.length, shoutoutId: s4.id });
+                                  if (dayShoutouts.length > 1) {
+                                    const dayEl = e4.currentTarget.closest(".rr-day");
+                                    const rect = dayEl ? dayEl.getBoundingClientRect() : { right: 200, top: 200 };
+                                    logger8.info("Opening stack popover", { dateStr, rect, shoutoutCount: dayShoutouts.length });
+                                    setStackPopover({
+                                      isOpen: true,
+                                      date: dateStr,
+                                      shoutouts: dayShoutouts,
+                                      position: { x: rect.right + 10, y: rect.top }
+                                    });
+                                  } else {
+                                    onShoutoutClick?.(s4, dateStr, isPast || isArchived ? "view" : "edit");
+                                  }
                                 }
-                              }
-                            },
-                            idx
-                          );
-                        }),
-                        dayShoutouts.length > 1 && /* @__PURE__ */ u4("div", { class: "rr-stack-count", children: dayShoutouts.length })
-                      ] })
-                    ]
-                  },
-                  dateStr
-                );
-              }),
-              Array.from({ length: 42 - firstDay - daysInMonth }, (_3, i5) => /* @__PURE__ */ u4("div", { class: "rr-day rr-day-empty" }, `empty-end-${i5}`))
+                              },
+                              idx
+                            );
+                          }),
+                          dayShoutouts.length > 1 && /* @__PURE__ */ u4("div", { class: "rr-stack-count", children: dayShoutouts.length })
+                        ] })
+                      ]
+                    },
+                    dateStr
+                  );
+                }),
+                Array.from({ length: 42 - firstDay - daysInMonth }, (_3, i5) => /* @__PURE__ */ u4("div", { class: "rr-day rr-day-empty" }, `empty-end-${i5}`))
+              ] })
             ] })
           ] }),
           /* @__PURE__ */ u4(
@@ -36716,9 +36718,12 @@
     onMyCodeAdd,
     onMyCodeEdit,
     onMyCodeCopy,
-    onMyCodeDelete
+    onMyCodeDelete,
+    onMyCodeReorder
   }) {
     const [copiedId, setCopiedId] = d3(null);
+    const [draggedId, setDraggedId] = d3(null);
+    const [dragOverId, setDragOverId] = d3(null);
     const handleCopy = (code) => {
       if (code?.code) {
         navigator.clipboard.writeText(code.code);
@@ -36726,6 +36731,39 @@
         setTimeout(() => setCopiedId(null), 1500);
         onMyCodeCopy?.(code);
       }
+    };
+    const handleDragStart2 = (e4, code) => {
+      setDraggedId(code.id);
+      e4.dataTransfer.effectAllowed = "move";
+      e4.dataTransfer.setData("text/plain", code.id);
+    };
+    const handleDragOver = (e4, code) => {
+      e4.preventDefault();
+      if (draggedId && draggedId !== code.id) {
+        setDragOverId(code.id);
+      }
+    };
+    const handleDragLeave = () => {
+      setDragOverId(null);
+    };
+    const handleDrop = (e4, targetCode) => {
+      e4.preventDefault();
+      if (draggedId && draggedId !== targetCode.id) {
+        const draggedIndex = myCodes.findIndex((c4) => c4.id === draggedId);
+        const targetIndex = myCodes.findIndex((c4) => c4.id === targetCode.id);
+        if (draggedIndex !== -1 && targetIndex !== -1) {
+          const newOrder = [...myCodes];
+          const [removed] = newOrder.splice(draggedIndex, 1);
+          newOrder.splice(targetIndex, 0, removed);
+          onMyCodeReorder?.(newOrder);
+        }
+      }
+      setDraggedId(null);
+      setDragOverId(null);
+    };
+    const handleDragEnd = () => {
+      setDraggedId(null);
+      setDragOverId(null);
     };
     return /* @__PURE__ */ u4("div", { class: "rr-mycodes-container", children: [
       /* @__PURE__ */ u4("div", { class: "rr-mycodes-header", children: [
@@ -36738,13 +36776,23 @@
       /* @__PURE__ */ u4("div", { class: "rr-mycodes-list", children: myCodes.length === 0 ? /* @__PURE__ */ u4("div", { class: "rr-mycodes-empty", children: "No codes yet. Click Add to create one." }) : myCodes.map((c4) => {
         const fiction = myFictions.find((f5) => String(f5.fictionId) === String(c4.fictionId));
         const displayName = c4.name || fiction?.title || "My Code";
-        const coverUrl = fiction?.coverUrl;
+        const imgMatch = c4.code?.match(/<img[^>]+src=["']([^"']+)["']/i);
+        const coverUrl = imgMatch?.[1] || fiction?.coverUrl;
+        const isDragging = draggedId === c4.id;
+        const isDragOver = dragOverId === c4.id;
         return /* @__PURE__ */ u4(
           "div",
           {
-            class: "rr-mycode-item",
+            class: `rr-mycode-item ${isDragging ? "rr-mycode-dragging" : ""} ${isDragOver ? "rr-mycode-dragover" : ""}`,
             onClick: () => onMyCodeEdit?.(c4.id),
+            draggable: true,
+            onDragStart: (e4) => handleDragStart2(e4, c4),
+            onDragOver: (e4) => handleDragOver(e4, c4),
+            onDragLeave: handleDragLeave,
+            onDrop: (e4) => handleDrop(e4, c4),
+            onDragEnd: handleDragEnd,
             children: [
+              /* @__PURE__ */ u4("div", { class: "rr-mycode-drag-handle", children: /* @__PURE__ */ u4("i", { class: "fa fa-grip-vertical" }) }),
               coverUrl ? /* @__PURE__ */ u4("img", { src: coverUrl, alt: "", class: "rr-mycode-cover" }) : /* @__PURE__ */ u4("div", { class: "rr-mycode-cover rr-mycode-cover-placeholder", children: /* @__PURE__ */ u4("i", { class: "fa fa-book" }) }),
               /* @__PURE__ */ u4("div", { class: "rr-mycode-info", children: [
                 /* @__PURE__ */ u4("span", { class: "rr-mycode-name", children: displayName }),
@@ -37739,28 +37787,37 @@
         previewRef.current.innerHTML = textareaRef.current.value;
       }
     }, [showPreview]);
-    const handleSave = () => {
+    const handleSave = async () => {
       const actualCode = textareaRef.current?.value || code;
+      let codeImageUrl = "";
+      const imgMatch = actualCode.match(/<img[^>]+src=["']([^"']+)["']/i);
+      if (imgMatch) {
+        codeImageUrl = imgMatch[1];
+      }
       logger12.info("Saving code", {
         hasRef: !!textareaRef.current,
         codeLength: actualCode?.length,
         name,
         fictionId,
+        codeImageUrl,
         existingId: myCode?.id
       });
-      onSave?.({
+      await onSave?.({
+        ...myCode,
+        // Preserve existing fields like order
         id: myCode?.id,
         code: actualCode,
         name,
-        fictionId
+        fictionId,
+        codeImageUrl
       });
       onClose();
     };
     const handleDeleteClick = () => {
       setShowDeleteConfirm(true);
     };
-    const handleDeleteConfirm = () => {
-      onDelete?.(myCode?.id);
+    const handleDeleteConfirm = async () => {
+      await onDelete?.(myCode?.id);
       setShowDeleteConfirm(false);
       onClose();
     };
@@ -38524,7 +38581,8 @@
         });
         setShoutouts(loadedShoutouts || []);
         setContacts(enrichedContacts);
-        setMyCodes(loadedMyCodes || []);
+        const sortedMyCodes = (loadedMyCodes || []).sort((a4, b3) => (a4.order ?? 999) - (b3.order ?? 999));
+        setMyCodes(sortedMyCodes);
         if (!resyncFictions) {
           setMyFictions(loadedMyFictions || []);
         }
@@ -38964,6 +39022,13 @@
                 onMyCodeDelete: async (id) => {
                   await deleteById("myCodes", id);
                   await loadData();
+                },
+                onMyCodeReorder: async (newOrder) => {
+                  for (let i5 = 0; i5 < newOrder.length; i5++) {
+                    const code = newOrder[i5];
+                    await save("myCodes", { ...code, order: i5 });
+                  }
+                  setMyCodes(newOrder);
                 }
               }
             ),
@@ -40736,6 +40801,11 @@
   position: relative;
 }
 
+/* Grid wrapper - contains grid and edge nav zones */
+.rr-calendar-grid-wrapper {
+  position: relative;
+}
+
 /* Grid */
 .rr-calendar-grid {
   border: 1px solid rgba(128, 128, 128, 0.2);
@@ -41467,7 +41537,7 @@
   var DropMenu_default = "/* Drop conflict menu */\n.rr-drop-menu {\n  background: var(--rr-card-bg, #1e1e2d);\n  border: 1px solid rgba(128, 128, 128, 0.3);\n  border-radius: 8px;\n  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);\n  min-width: 200px;\n  z-index: 10000;\n  overflow: hidden;\n}\n\n.rr-drop-menu-title {\n  padding: 0.75rem 1rem;\n  font-size: 0.8rem;\n  font-weight: 600;\n  color: rgba(255, 255, 255, 0.6);\n  border-bottom: 1px solid rgba(128, 128, 128, 0.2);\n}\n\n.rr-drop-menu-item {\n  display: flex;\n  align-items: center;\n  gap: 0.75rem;\n  width: 100%;\n  padding: 0.75rem 1rem;\n  background: transparent;\n  border: none;\n  color: inherit;\n  text-align: left;\n  cursor: pointer;\n  transition: background 0.15s;\n}\n\n.rr-drop-menu-item:hover {\n  background: rgba(51, 122, 183, 0.2);\n}\n\n.rr-drop-menu-item i {\n  width: 16px;\n  text-align: center;\n  color: #337ab7;\n}\n\n.rr-drop-menu-label {\n  font-weight: 500;\n  flex-shrink: 0;\n}\n\n.rr-drop-menu-desc {\n  font-size: 0.75rem;\n  color: rgba(128, 128, 128, 0.7);\n  margin-left: auto;\n}\n\n.rr-drop-menu-cancel {\n  border-top: 1px solid rgba(128, 128, 128, 0.2);\n  justify-content: center;\n  color: rgba(128, 128, 128, 0.7);\n}\n\n.rr-drop-menu-cancel:hover {\n  background: rgba(128, 128, 128, 0.1);\n  color: inherit;\n}\n";
 
   // src/shout_out_swapper/ui/contacts/Contacts.css
-  var Contacts_default = "/* Contacts - list, sections, items, my codes */\n\n/* Main container */\n.rr-contact-list {\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-height: 0;\n  background: rgba(128, 128, 128, 0.03);\n  border: 1px solid rgba(128, 128, 128, 0.15);\n  border-radius: 8px;\n  overflow: hidden;\n}\n\n/* Header */\n.rr-contact-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 0.75rem 1rem;\n  background: rgba(128, 128, 128, 0.1);\n  border-bottom: 1px solid rgba(128, 128, 128, 0.15);\n}\n\n.rr-contact-title {\n  font-weight: 600;\n  font-size: 0.9rem;\n}\n\n.rr-contacts-close {\n  background: transparent;\n  border: none;\n  color: inherit;\n  opacity: 0.5;\n  cursor: pointer;\n  font-size: 1.2rem;\n  line-height: 1;\n}\n\n.rr-contacts-close:hover {\n  opacity: 1;\n}\n\n/* Search */\n.rr-contact-search {\n  padding: 0.5rem;\n  border-bottom: 1px solid rgba(128, 128, 128, 0.15);\n}\n\n/* Sections container */\n.rr-contact-sections {\n  flex: 1;\n  overflow: hidden;\n  padding: 0.5rem;\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n}\n\n.rr-contact-section {\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n}\n\n/* Upcoming section - 20% of space */\n.rr-upcoming-section {\n  flex: 0 0 20%;\n  max-height: 20%;\n  overflow: hidden;\n  margin-bottom: 0.5rem;\n}\n\n.rr-upcoming-items {\n  flex: 1;\n  overflow-y: auto;\n  min-height: 0;\n}\n\n/* All Contacts - takes remaining space */\n.rr-all-section {\n  flex: 1;\n  overflow: hidden;\n  min-height: 0;\n}\n\n.rr-contact-items {\n  flex: 1;\n  overflow-y: auto;\n  min-height: 0;\n}\n\n.rr-section-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  font-size: 0.75rem;\n  font-weight: 600;\n  text-transform: uppercase;\n  opacity: 0.6;\n  padding: 0.25rem 0.5rem;\n  margin-bottom: 0.25rem;\n}\n\n/* Section items containers */\n.rr-upcoming-items,\n.rr-contact-items,\n.rr-mycodes-items {\n  display: flex;\n  flex-direction: column;\n  gap: 0.25rem;\n}\n\n.rr-mycodes-items {\n  max-height: 150px;\n  overflow-y: auto;\n}\n\n/* Contact item */\n.rr-contact-item {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  padding: 0.5rem;\n  border-radius: 4px;\n  cursor: pointer;\n  transition: background 0.15s;\n}\n\n.rr-contact-item:hover {\n  background: rgba(128, 128, 128, 0.1);\n}\n\n.rr-upcoming-item {\n  border-left: 3px solid #5cb85c;\n}\n\n/* Avatar */\n.rr-contact-avatar {\n  width: 32px;\n  height: 32px;\n  border-radius: 50%;\n  object-fit: cover;\n  flex-shrink: 0;\n}\n\n.rr-contact-avatar-placeholder {\n  width: 32px;\n  height: 32px;\n  border-radius: 50%;\n  background: rgba(128, 128, 128, 0.2);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 0.8rem;\n  font-weight: 600;\n  flex-shrink: 0;\n}\n\n/* Contact info */\n.rr-contact-info {\n  flex: 1;\n  min-width: 0;\n}\n\n.rr-contact-name {\n  font-size: 0.85rem;\n  font-weight: 500;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.rr-contact-date {\n  font-size: 0.75rem;\n  color: #5cb85c;\n  font-weight: 500;\n}\n\n.rr-contact-fiction {\n  font-size: 0.75rem;\n  opacity: 0.6;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n/* Delete button */\n.rr-contact-delete {\n  background: transparent;\n  border: none;\n  opacity: 0;\n  cursor: pointer;\n  font-size: 1rem;\n  color: inherit;\n  line-height: 1;\n  transition: opacity 0.15s;\n}\n\n.rr-contact-item:hover .rr-contact-delete {\n  opacity: 0.5;\n}\n\n.rr-contact-delete:hover {\n  opacity: 1;\n  color: #d9534f;\n}\n\n/* Empty state */\n.rr-contact-empty {\n  padding: 1rem;\n  text-align: center;\n  opacity: 0.5;\n  font-size: 0.8rem;\n}\n\n/* My Codes section */\n.rr-mycodes-section {\n  margin-top: auto;\n  border-top: 1px solid rgba(128, 128, 128, 0.15);\n  padding-top: 0.5rem;\n}\n\n.rr-mycodes-add-btn {\n  background: transparent;\n  border: none;\n  color: #337ab7;\n  cursor: pointer;\n  font-size: 1.2rem;\n  line-height: 1;\n  transition: transform 0.15s;\n}\n\n.rr-mycodes-add-btn:hover {\n  transform: scale(1.2);\n}\n\n.rr-mycode-item {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 0.5rem;\n  padding: 0.25rem 0.5rem;\n  border-radius: 4px;\n  background: rgba(128, 128, 128, 0.05);\n  cursor: pointer;\n  transition: background 0.15s;\n}\n\n.rr-mycode-item:hover {\n  background: rgba(128, 128, 128, 0.1);\n}\n\n.rr-mycode-info {\n  flex: 1;\n  min-width: 0;\n}\n\n.rr-mycode-name {\n  font-size: 0.85rem;\n  font-weight: 500;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.rr-mycode-fiction {\n  font-size: 0.7rem;\n  opacity: 0.5;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  display: block;\n}\n\n.rr-mycode-actions {\n  display: flex;\n  gap: 0.25rem;\n  opacity: 0;\n  transition: opacity 0.15s;\n}\n\n.rr-mycode-item:hover .rr-mycode-actions {\n  opacity: 1;\n}\n\n.rr-mycode-copy {\n  background: transparent;\n  border: none;\n  color: #3b82f6;\n  cursor: pointer;\n  font-size: 0.75rem;\n}\n\n.rr-mycode-delete {\n  background: transparent;\n  border: none;\n  color: #ef4444;\n  cursor: pointer;\n  font-size: 0.9rem;\n  line-height: 1;\n}\n\n.rr-mycodes-empty {\n  padding: 0.5rem;\n  text-align: center;\n  opacity: 0.5;\n  font-size: 0.75rem;\n}\n\n/* My Codes standalone container - matches contact-list styling */\n.rr-mycodes-container {\n  background: rgba(128, 128, 128, 0.03);\n  border: 1px solid rgba(128, 128, 128, 0.15);\n  border-radius: 8px;\n  overflow: hidden;\n  margin-bottom: 0.75rem;\n}\n\n.rr-mycodes-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 0.5rem 0.75rem;\n  background: rgba(128, 128, 128, 0.1);\n  border-bottom: 1px solid rgba(128, 128, 128, 0.15);\n}\n\n.rr-mycodes-title {\n  font-weight: 600;\n  font-size: 0.85rem;\n}\n\n.rr-mycodes-list {\n  padding: 0.5rem;\n  max-height: 150px;\n  overflow-y: auto;\n  display: flex;\n  flex-direction: column;\n  gap: 0.25rem;\n}\n\n.rr-mycodes-container .rr-mycode-actions {\n  opacity: 1;\n}\n\n/* Fiction cover badge */\n.rr-mycode-cover {\n  width: 32px;\n  height: 32px;\n  border-radius: 4px;\n  object-fit: cover;\n  flex-shrink: 0;\n  border: 1px solid rgba(128, 128, 128, 0.2);\n}\n\n.rr-mycode-cover-placeholder {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  background: rgba(128, 128, 128, 0.15);\n  color: rgba(128, 128, 128, 0.5);\n  font-size: 0.9rem;\n}\n";
+  var Contacts_default = "/* Contacts - list, sections, items, my codes */\n\n/* Main container */\n.rr-contact-list {\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-height: 0;\n  background: rgba(128, 128, 128, 0.03);\n  border: 1px solid rgba(128, 128, 128, 0.15);\n  border-radius: 8px;\n  overflow: hidden;\n}\n\n/* Header */\n.rr-contact-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 0.75rem 1rem;\n  background: rgba(128, 128, 128, 0.1);\n  border-bottom: 1px solid rgba(128, 128, 128, 0.15);\n}\n\n.rr-contact-title {\n  font-weight: 600;\n  font-size: 0.9rem;\n}\n\n.rr-contacts-close {\n  background: transparent;\n  border: none;\n  color: inherit;\n  opacity: 0.5;\n  cursor: pointer;\n  font-size: 1.2rem;\n  line-height: 1;\n}\n\n.rr-contacts-close:hover {\n  opacity: 1;\n}\n\n/* Search */\n.rr-contact-search {\n  padding: 0.5rem;\n  border-bottom: 1px solid rgba(128, 128, 128, 0.15);\n}\n\n/* Sections container */\n.rr-contact-sections {\n  flex: 1;\n  overflow: hidden;\n  padding: 0.5rem;\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n}\n\n.rr-contact-section {\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n}\n\n/* Upcoming section - 20% of space */\n.rr-upcoming-section {\n  flex: 0 0 20%;\n  max-height: 20%;\n  overflow: hidden;\n  margin-bottom: 0.5rem;\n}\n\n.rr-upcoming-items {\n  flex: 1;\n  overflow-y: auto;\n  min-height: 0;\n}\n\n/* All Contacts - takes remaining space */\n.rr-all-section {\n  flex: 1;\n  overflow: hidden;\n  min-height: 0;\n}\n\n.rr-contact-items {\n  flex: 1;\n  overflow-y: auto;\n  min-height: 0;\n}\n\n.rr-section-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  font-size: 0.75rem;\n  font-weight: 600;\n  text-transform: uppercase;\n  opacity: 0.6;\n  padding: 0.25rem 0.5rem;\n  margin-bottom: 0.25rem;\n}\n\n/* Section items containers */\n.rr-upcoming-items,\n.rr-contact-items,\n.rr-mycodes-items {\n  display: flex;\n  flex-direction: column;\n  gap: 0.25rem;\n}\n\n.rr-mycodes-items {\n  max-height: 150px;\n  overflow-y: auto;\n}\n\n/* Contact item */\n.rr-contact-item {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  padding: 0.5rem;\n  border-radius: 4px;\n  cursor: pointer;\n  transition: background 0.15s;\n}\n\n.rr-contact-item:hover {\n  background: rgba(128, 128, 128, 0.1);\n}\n\n.rr-upcoming-item {\n  border-left: 3px solid #5cb85c;\n}\n\n/* Avatar */\n.rr-contact-avatar {\n  width: 32px;\n  height: 32px;\n  border-radius: 50%;\n  object-fit: cover;\n  flex-shrink: 0;\n}\n\n.rr-contact-avatar-placeholder {\n  width: 32px;\n  height: 32px;\n  border-radius: 50%;\n  background: rgba(128, 128, 128, 0.2);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 0.8rem;\n  font-weight: 600;\n  flex-shrink: 0;\n}\n\n/* Contact info */\n.rr-contact-info {\n  flex: 1;\n  min-width: 0;\n}\n\n.rr-contact-name {\n  font-size: 0.85rem;\n  font-weight: 500;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.rr-contact-date {\n  font-size: 0.75rem;\n  color: #5cb85c;\n  font-weight: 500;\n}\n\n.rr-contact-fiction {\n  font-size: 0.75rem;\n  opacity: 0.6;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n/* Delete button */\n.rr-contact-delete {\n  background: transparent;\n  border: none;\n  opacity: 0;\n  cursor: pointer;\n  font-size: 1rem;\n  color: inherit;\n  line-height: 1;\n  transition: opacity 0.15s;\n}\n\n.rr-contact-item:hover .rr-contact-delete {\n  opacity: 0.5;\n}\n\n.rr-contact-delete:hover {\n  opacity: 1;\n  color: #d9534f;\n}\n\n/* Empty state */\n.rr-contact-empty {\n  padding: 1rem;\n  text-align: center;\n  opacity: 0.5;\n  font-size: 0.8rem;\n}\n\n/* My Codes section */\n.rr-mycodes-section {\n  margin-top: auto;\n  border-top: 1px solid rgba(128, 128, 128, 0.15);\n  padding-top: 0.5rem;\n}\n\n.rr-mycodes-add-btn {\n  background: transparent;\n  border: none;\n  color: #337ab7;\n  cursor: pointer;\n  font-size: 1.2rem;\n  line-height: 1;\n  transition: transform 0.15s;\n}\n\n.rr-mycodes-add-btn:hover {\n  transform: scale(1.2);\n}\n\n.rr-mycode-item {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 0.5rem;\n  padding: 0.25rem 0.5rem;\n  border-radius: 4px;\n  background: rgba(128, 128, 128, 0.05);\n  cursor: pointer;\n  transition: background 0.15s, opacity 0.15s, border-color 0.15s;\n  border: 2px solid transparent;\n}\n\n.rr-mycode-item:hover {\n  background: rgba(128, 128, 128, 0.1);\n}\n\n.rr-mycode-drag-handle {\n  cursor: grab;\n  color: rgba(128, 128, 128, 0.4);\n  padding: 0.25rem;\n  display: flex;\n  align-items: center;\n}\n\n.rr-mycode-drag-handle:hover {\n  color: rgba(128, 128, 128, 0.8);\n}\n\n.rr-mycode-item.rr-mycode-dragging {\n  opacity: 0.5;\n  cursor: grabbing;\n}\n\n.rr-mycode-item.rr-mycode-dragover {\n  border-color: #337ab7;\n  background: rgba(51, 122, 183, 0.15);\n}\n\n.rr-mycode-info {\n  flex: 1;\n  min-width: 0;\n}\n\n.rr-mycode-name {\n  font-size: 0.85rem;\n  font-weight: 500;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.rr-mycode-fiction {\n  font-size: 0.7rem;\n  opacity: 0.5;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  display: block;\n}\n\n.rr-mycode-actions {\n  display: flex;\n  gap: 0.25rem;\n  opacity: 0;\n  transition: opacity 0.15s;\n}\n\n.rr-mycode-item:hover .rr-mycode-actions {\n  opacity: 1;\n}\n\n.rr-mycode-copy {\n  background: transparent;\n  border: none;\n  color: #3b82f6;\n  cursor: pointer;\n  font-size: 0.75rem;\n}\n\n.rr-mycode-delete {\n  background: transparent;\n  border: none;\n  color: #ef4444;\n  cursor: pointer;\n  font-size: 0.9rem;\n  line-height: 1;\n}\n\n.rr-mycodes-empty {\n  padding: 0.5rem;\n  text-align: center;\n  opacity: 0.5;\n  font-size: 0.75rem;\n}\n\n/* My Codes standalone container - matches contact-list styling */\n.rr-mycodes-container {\n  background: rgba(128, 128, 128, 0.03);\n  border: 1px solid rgba(128, 128, 128, 0.15);\n  border-radius: 8px;\n  overflow: hidden;\n  margin-bottom: 0.75rem;\n}\n\n.rr-mycodes-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 0.5rem 0.75rem;\n  background: rgba(128, 128, 128, 0.1);\n  border-bottom: 1px solid rgba(128, 128, 128, 0.15);\n}\n\n.rr-mycodes-title {\n  font-weight: 600;\n  font-size: 0.85rem;\n}\n\n.rr-mycodes-list {\n  padding: 0.5rem;\n  max-height: 150px;\n  overflow-y: auto;\n  display: flex;\n  flex-direction: column;\n  gap: 0.25rem;\n}\n\n.rr-mycodes-container .rr-mycode-actions {\n  opacity: 1;\n}\n\n/* Fiction cover badge */\n.rr-mycode-cover {\n  width: 32px;\n  height: 32px;\n  border-radius: 4px;\n  object-fit: cover;\n  flex-shrink: 0;\n  border: 1px solid rgba(128, 128, 128, 0.2);\n}\n\n.rr-mycode-cover-placeholder {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  background: rgba(128, 128, 128, 0.15);\n  color: rgba(128, 128, 128, 0.5);\n  font-size: 0.9rem;\n}\n";
 
   // src/shout_out_swapper/ui/contacts/ContactModal.css
   var ContactModal_default = "/* Contact Modal - matches v1's contact modal styles */\n\n.rr-contact-modal-content {\n  display: flex;\n  flex-direction: column;\n  gap: 1.25rem;\n}\n\n.rr-contact-modal-header {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  text-align: center;\n  gap: 0.5rem;\n}\n\n.rr-contact-modal-avatar {\n  width: 72px;\n  height: 72px;\n  border-radius: 50%;\n  object-fit: cover;\n}\n\n.rr-contact-modal-avatar.rr-contact-avatar-placeholder {\n  background: rgba(128, 128, 128, 0.2);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 1.8rem;\n  font-weight: 600;\n}\n\n.rr-contact-modal-name {\n  font-size: 1.1rem;\n  font-weight: 600;\n}\n\n.rr-contact-modal-links {\n  display: flex;\n  gap: 0.5rem;\n  justify-content: center;\n}\n\n.rr-contact-modal-links .btn {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 0.4rem;\n}\n\n/* Loading state */\n.rr-contact-loading {\n  padding: 1rem;\n  text-align: center;\n  opacity: 0.6;\n}\n\n/* Fiction section */\n.rr-contact-fiction-section {\n  padding-top: 0.75rem;\n  border-top: 1px solid rgba(128, 128, 128, 0.15);\n}\n\n.rr-section-label {\n  display: block;\n  font-size: 0.75rem;\n  font-weight: 600;\n  text-transform: uppercase;\n  opacity: 0.6;\n  margin-bottom: 0.5rem;\n}\n\n.rr-contact-fiction-card {\n  display: flex;\n  align-items: center;\n  gap: 0.75rem;\n  padding: 0.5rem;\n  border: 1px solid rgba(128, 128, 128, 0.2);\n  border-radius: 6px;\n  text-decoration: none;\n  color: inherit;\n  transition: background 0.2s;\n}\n\n.rr-contact-fiction-card:hover {\n  background: rgba(128, 128, 128, 0.1);\n  text-decoration: none;\n  color: inherit;\n}\n\n.rr-contact-fiction-card + .rr-contact-fiction-card {\n  margin-top: 0.5rem;\n}\n\n.rr-fiction-cover {\n  width: 40px;\n  height: 60px;\n  object-fit: cover;\n  border-radius: 4px;\n  flex-shrink: 0;\n}\n\n.rr-fiction-cover.rr-fiction-cover-placeholder {\n  background: rgba(128, 128, 128, 0.2);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 1.2rem;\n  font-weight: 600;\n  color: rgba(128, 128, 128, 0.6);\n}\n\n.rr-fiction-info {\n  flex: 1;\n  min-width: 0;\n}\n\n.rr-fiction-title {\n  font-size: 0.9rem;\n  font-weight: 500;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.rr-fiction-stats {\n  display: flex;\n  gap: 0.75rem;\n  margin-top: 0.25rem;\n}\n\n.rr-fiction-stat {\n  font-size: 0.7rem;\n  display: flex;\n  align-items: center;\n  gap: 0.25rem;\n}\n\n.rr-fiction-stat.rr-stat-archived {\n  color: #28a745;\n}\n\n.rr-fiction-stat.rr-stat-pending {\n  color: #e67e22;\n}\n\n.rr-fiction-dates {\n  font-size: 0.7rem;\n  opacity: 0.6;\n  margin-top: 0.15rem;\n}\n\n.rr-fiction-date {\n  font-size: 0.75rem;\n  opacity: 0.7;\n  margin-top: 0.15rem;\n}\n\n/* Contact methods (discord, email) */\n.rr-contact-methods {\n  display: flex;\n  flex-direction: column;\n  gap: 0.75rem;\n  padding-top: 1rem;\n  border-top: 1px solid rgba(128, 128, 128, 0.15);\n}\n\n.rr-contact-method {\n  display: flex;\n  align-items: center;\n  gap: 0.75rem;\n}\n\n.rr-method-icon {\n  width: 24px;\n  text-align: center;\n  font-size: 1.1rem;\n}\n\n.rr-method-icon.fa-discord {\n  color: #5865F2;\n}\n\n.rr-method-icon.fa-envelope {\n  color: #ea4335;\n}\n\n.rr-contact-method input {\n  flex: 1;\n  padding: 0.5rem 0.75rem;\n  font-size: 0.9rem;\n  border: 1px solid rgba(128, 128, 128, 0.3);\n  border-radius: 4px;\n  background: transparent;\n  color: inherit;\n}\n\n.rr-discord-fields {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  flex: 1;\n}\n\n.rr-contact-value {\n  flex: 1;\n  font-size: 0.9rem;\n}\n\n.rr-contact-value a {\n  color: #337ab7;\n  text-decoration: none;\n}\n\n.rr-contact-value a:hover {\n  text-decoration: underline;\n}\n\n.rr-discord-link {\n  color: #5865F2;\n}\n\n.rr-contact-empty-value {\n  opacity: 0.4;\n  font-style: italic;\n}\n";
