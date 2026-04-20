@@ -1,6 +1,7 @@
 // Fetch utilities for Royal Road pages
 
 import { log } from '../logging/core.js';
+import { parseFictionDetails, parseAvatarFromProfile } from './fictionDetails.js';
 
 const logger = log.scope('fetch');
 
@@ -90,98 +91,40 @@ export async function fetchFictionDetails(fictionId) {
   const url = `https://www.royalroad.com/fiction/${fictionId}`;
   logger.info('Fetching fiction details', { fictionId });
 
-  const doc = await fetchPage(url);
-  if (!doc) return null;
+  try {
+    const response = await fetchWithRetry(url, {
+      credentials: 'include',
+      headers: { 'Accept': 'text/html' }
+    });
 
-  let fictionTitle = '';
-  let coverUrl = '';
-  let authorName = '';
-  let authorAvatar = '';
-  let profileUrl = '';
-
-  // Fiction title - try multiple sources
-  const h3Title = doc.querySelector('h3.text-on-surface-strong');
-  if (h3Title) {
-    fictionTitle = h3Title.textContent.trim();
-  }
-
-  if (!fictionTitle) {
-    const ogTitle = doc.querySelector('meta[property="og:title"]');
-    if (ogTitle) {
-      fictionTitle = ogTitle.getAttribute('content') || '';
-      fictionTitle = fictionTitle.replace(/\s*\|\s*Royal Road.*$/i, '').trim();
+    if (!response.ok) {
+      logger.error('Fetch failed', { url, status: response.status });
+      return null;
     }
-  }
 
-  if (!fictionTitle) {
-    const coverImg = doc.querySelector('img[data-type="cover"]');
-    if (coverImg) {
-      fictionTitle = (coverImg.getAttribute('alt') || '').trim();
-    }
-  }
+    const html = await response.text();
+    const details = parseFictionDetails(html, fictionId);
 
-  // Cover image
-  const ogImage = doc.querySelector('meta[property="og:image"]');
-  if (ogImage) {
-    coverUrl = ogImage.getAttribute('content') || '';
-  }
-
-  if (!coverUrl) {
-    const coverImg = doc.querySelector('img[data-type="cover"]');
-    if (coverImg) {
-      coverUrl = coverImg.getAttribute('src') || '';
-    }
-  }
-
-  // Author info from profile links
-  const authorLinks = doc.querySelectorAll('a[href*="/profile/"]');
-  let profileId = null;
-
-  for (const link of authorLinks) {
-    const h4 = link.querySelector('h4.text-on-surface-strong');
-    if (h4) {
-      const href = link.getAttribute('href') || '';
-      const match = href.match(/\/profile\/(\d+)/);
-      if (match) {
-        profileId = match[1];
-        authorName = h4.textContent.trim();
-        profileUrl = `https://www.royalroad.com/profile/${profileId}`;
-        break;
-      }
-    }
-  }
-
-  // Author avatar
-  if (profileId) {
-    for (const link of authorLinks) {
-      const href = link.getAttribute('href') || '';
-      if (href.includes(`/profile/${profileId}`)) {
-        const avatarImg = link.querySelector('img[data-type="avatar"]');
-        if (avatarImg) {
-          authorAvatar = avatarImg.getAttribute('src') || '';
-          break;
+    let authorAvatar = '';
+    if (details.profileId) {
+      try {
+        const profileRes = await fetchWithRetry(details.profileUrl, {
+          credentials: 'include',
+          headers: { 'Accept': 'text/html' },
+        });
+        if (profileRes.ok) {
+          authorAvatar = parseAvatarFromProfile(await profileRes.text());
         }
+      } catch (err) {
+        logger.warn('Profile fetch failed; author avatar will be empty', { profileUrl: details.profileUrl, error: err.message });
       }
     }
+
+    const { profileId, ...rest } = details;
+    logger.info('Fiction details fetched', { fictionId, fictionTitle: rest.fictionTitle, authorName: rest.authorName, hasAvatar: !!authorAvatar });
+    return { ...rest, authorAvatar };
+  } catch (err) {
+    logger.error('Fetch error after retries', { url, error: err.message });
+    return null;
   }
-
-  // Fallback author name from meta
-  if (!authorName) {
-    const authorMeta = doc.querySelector('meta[property="books:author"]');
-    if (authorMeta) {
-      authorName = authorMeta.getAttribute('content') || '';
-    }
-  }
-
-  logger.info('Fiction details fetched', { fictionId, fictionTitle, authorName });
-
-  return {
-    fictionId,
-    fictionTitle,
-    fictionUrl: url,
-    coverUrl,
-    authorName,
-    authorAvatar,
-    profileUrl
-  };
 }

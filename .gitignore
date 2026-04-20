@@ -22,5 +22,12 @@ Thumbs.db
 .env.local
 .env.*.local
 
+# Playwright test artifacts
+.test-profile/
+test-results/
+playwright-report/
+playwright/.cache/
+tests/fixtures/
+
 # Package manager locks (optional - uncomment if you want to ignore)
 # package-lock.json

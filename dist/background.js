@@ -245,6 +245,14 @@ console.log("[RR Companion BG] Service worker loading...");
 var SCAN_STATE_KEY = "scanState";
 var IMPORT_STATE_KEY = "importState";
 var SWAP_CHECK_STATE_KEY = "swapCheckState";
+var CHECK_ALL_SWAPS_STATE_KEY = "checkAllSwapsState";
+async function getCheckAllSwapsState() {
+  const result = await chrome.storage.local.get(CHECK_ALL_SWAPS_STATE_KEY);
+  return result[CHECK_ALL_SWAPS_STATE_KEY] || { status: "idle" };
+}
+async function setCheckAllSwapsState(state) {
+  await chrome.storage.local.set({ [CHECK_ALL_SWAPS_STATE_KEY]: state });
+}
 var dbReady = false;
 async function ensureDB() {
   if (!dbReady) {
@@ -414,18 +422,36 @@ async function fetchFictionDetails(fictionId) {
     throw new Error(result?.error || "Failed to parse fiction details");
   }
   const data = result.data;
+  let authorAvatar = "";
+  if (data?.profileId && data?.profileUrl) {
+    try {
+      const profileRes = await fetchWithRetry(data.profileUrl, { credentials: "include" });
+      if (profileRes.ok) {
+        const profileHtml = await profileRes.text();
+        const avatarResult = await chrome.runtime.sendMessage({
+          type: "parseAvatarFromProfile",
+          html: profileHtml
+        });
+        if (avatarResult?.success)
+          authorAvatar = avatarResult.data || "";
+      }
+    } catch (err) {
+      authorLogger.warn("Profile fetch failed; avatar will be empty", { profileUrl: data.profileUrl, error: err.message });
+    }
+  }
   authorLogger.info("Fiction details parsed", {
     fictionId,
     fictionTitle: data?.fictionTitle || "(empty)",
     authorName: data?.authorName || "(empty)",
     hasCover: !!data?.coverUrl,
     hasProfile: !!data?.profileUrl,
-    hasAvatar: !!data?.authorAvatar
+    hasAvatar: !!authorAvatar
   });
   if (!data?.authorName) {
     authorLogger.warn("Author name is empty after parse", { fictionId, data });
   }
-  return data;
+  const { profileId, ...rest } = data || {};
+  return { ...rest, authorAvatar };
 }
 async function batchDownloadChapters(chapters, batchSize = 5, delayMs = 1e3, onProgress = null) {
   const results = /* @__PURE__ */ new Map();
@@ -514,7 +540,13 @@ async function runFullScan(myFictionId) {
     const processedInScan = /* @__PURE__ */ new Set();
     const existingContacts = await getAll("contacts") || [];
     const contactCache = new Map(existingContacts.map((c) => [c.authorName, c]));
+    let scanCancelled = false;
     for (let i = 0; i < chaptersToDownload.length; i++) {
+      const liveState = await getScanState();
+      if (liveState.status !== "scanning") {
+        scanCancelled = true;
+        break;
+      }
       const chapter = chaptersToDownload[i];
       await setScanState({
         status: "scanning",
@@ -609,12 +641,11 @@ async function runFullScan(myFictionId) {
             localShoutouts.push({ ...newShoutout, id: newId });
           }
           shoutoutsFound++;
-          chrome.runtime.sendMessage({
+          broadcastToTabs({
             type: "shoutoutFound",
             chapterName: chapter.title,
             fictionTitle: details?.fictionTitle || "Unknown",
             authorName: details?.authorName || "Unknown"
-          }).catch(() => {
           });
         }
       } catch (err) {
@@ -712,6 +743,12 @@ async function runFullScan(myFictionId) {
       }
       console.log("[RR Companion BG] Swap check complete:", { checked: swapsChecked, found: swapsFound });
     }
+    if (scanCancelled) {
+      console.log("[RR Companion BG] Scan cancelled by user");
+      await setScanState({ status: "idle" });
+      broadcastToTabs({ type: "scanCancelled" });
+      return;
+    }
     await setScanState({
       status: "complete",
       message: `Done! Found ${shoutoutsFound} shoutout(s).`,
@@ -719,8 +756,7 @@ async function runFullScan(myFictionId) {
       fictionTitle,
       completedAt: (/* @__PURE__ */ new Date()).toISOString()
     });
-    chrome.runtime.sendMessage({ type: "scanComplete", shoutoutsFound }).catch(() => {
-    });
+    broadcastToTabs({ type: "scanComplete", shoutoutsFound });
   } catch (err) {
     console.error("[RR Companion BG] Scan error:", err);
     await setScanState({ status: "error", error: err.message });
@@ -746,9 +782,16 @@ async function checkAllSwaps() {
       return { checked: 0, found: 0, error: "No fictions found" };
     }
     await ensureOffscreenDocument();
+    await setCheckAllSwapsState({ status: "running", current: 0, total: unswappedShoutouts.length });
     let swapsChecked = 0;
     let swapsFound = 0;
+    let checkAllCancelled = false;
     for (const shoutout of unswappedShoutouts) {
+      const liveState = await getCheckAllSwapsState();
+      if (liveState.status !== "running") {
+        checkAllCancelled = true;
+        break;
+      }
       swapsChecked++;
       if (!shoutout.authorName && shoutout.fictionId) {
         authorLogger.info("Auto-heal triggered (checkAllSwaps) - missing author", {
@@ -894,6 +937,12 @@ async function checkAllSwaps() {
         });
       }
     }
+    await setCheckAllSwapsState({ status: "idle" });
+    if (checkAllCancelled) {
+      console.log("[RR Companion BG] Check all swaps cancelled by user");
+      broadcastToTabs({ type: "checkAllSwapsCancelled", checked: swapsChecked });
+      return { checked: swapsChecked, found: swapsFound, cancelled: true };
+    }
     console.log("[RR Companion BG] Check all swaps complete:", { checked: swapsChecked, found: swapsFound });
     broadcastToTabs({
       type: "swapCheckComplete",
@@ -903,6 +952,7 @@ async function checkAllSwaps() {
     return { checked: swapsChecked, found: swapsFound };
   } catch (err) {
     console.error("[RR Companion BG] Check all swaps error:", err);
+    await setCheckAllSwapsState({ status: "idle" });
     return { checked: 0, found: 0, error: err.message };
   }
 }
@@ -1175,7 +1225,10 @@ async function runImport(workbookData) {
       type: "importStarted",
       total: totalRows
     });
+    let cancelled = false;
     for (const sheet of workbookData.sheets) {
+      if (cancelled)
+        break;
       const isUnscheduled = sheet.name.toLowerCase() === "unscheduled";
       let myFiction = null;
       if (!isUnscheduled) {
@@ -1188,6 +1241,11 @@ async function runImport(workbookData) {
         }
       }
       for (const row of sheet.rows) {
+        const liveState = await getImportState();
+        if (liveState.status !== "importing") {
+          cancelled = true;
+          break;
+        }
         processedRows++;
         if (processedRows % 5 === 0) {
           await setImportState({
@@ -1328,6 +1386,12 @@ async function runImport(workbookData) {
         await delay(50);
       }
     }
+    if (cancelled) {
+      console.log("[RR Companion BG] Import cancelled by user");
+      await setImportState({ status: "idle" });
+      broadcastToTabs({ type: "importCancelled" });
+      return;
+    }
     await setImportState({
       status: "complete",
       imported,
@@ -1446,6 +1510,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       console.error("[RR Companion BG] checkAllSwaps error:", err);
       sendResponse({ checked: 0, found: 0, error: err.message });
     });
+    return true;
+  }
+  if (message.type === "cancelCheckAllSwaps") {
+    setCheckAllSwapsState({ status: "idle" }).then(() => sendResponse({ cancelled: true }));
+    return true;
+  }
+  if (message.type === "getCheckAllSwapsState") {
+    getCheckAllSwapsState().then((state) => sendResponse(state));
     return true;
   }
   if (message.type === "db:getAll") {

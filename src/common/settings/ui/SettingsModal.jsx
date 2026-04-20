@@ -51,14 +51,19 @@ export function SettingsModal({ isOpen, onClose, onClearAll }) {
   };
 
   const handleDeleteDatabase = async () => {
-    logger.info('Deleting database');
+    logger.info('Deleting database and localStorage');
     setShowDeleteDbConfirm(false);
 
-    // Delete the IndexedDB database completely
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch (err) {
+      logger.warn('Failed to clear storage', err);
+    }
+
     const deleteRequest = indexedDB.deleteDatabase('rr-companion');
     deleteRequest.onsuccess = () => {
       logger.info('Database deleted');
-      // Reload the page to reinitialize
       window.location.reload();
     };
     deleteRequest.onerror = () => {

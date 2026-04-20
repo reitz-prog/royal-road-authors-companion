@@ -126,6 +126,18 @@ export function checkAllSwaps() {
   });
 }
 
+export function cancelCheckAllSwaps() {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ type: 'cancelCheckAllSwaps' }, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else {
+        resolve(response);
+      }
+    });
+  });
+}
+
 // Listen for scan progress updates from background
 export function onScanProgress(callback) {
   const listener = (message) => {

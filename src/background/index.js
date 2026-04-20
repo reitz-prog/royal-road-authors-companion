@@ -13,6 +13,16 @@ console.log('[RR Companion BG] Service worker loading...');
 const SCAN_STATE_KEY = 'scanState';
 const IMPORT_STATE_KEY = 'importState';
 const SWAP_CHECK_STATE_KEY = 'swapCheckState';
+const CHECK_ALL_SWAPS_STATE_KEY = 'checkAllSwapsState';
+
+async function getCheckAllSwapsState() {
+  const result = await chrome.storage.local.get(CHECK_ALL_SWAPS_STATE_KEY);
+  return result[CHECK_ALL_SWAPS_STATE_KEY] || { status: 'idle' };
+}
+
+async function setCheckAllSwapsState(state) {
+  await chrome.storage.local.set({ [CHECK_ALL_SWAPS_STATE_KEY]: state });
+}
 
 // Initialize DB when service worker starts
 let dbReady = false;
@@ -244,20 +254,41 @@ async function fetchFictionDetails(fictionId) {
   }
 
   const data = result.data;
+
+  // Second step: fetch the profile page to get the real avatar CDN URL.
+  // The fiction page's avatar <img> often points at a placeholder; the profile page doesn't.
+  let authorAvatar = '';
+  if (data?.profileId && data?.profileUrl) {
+    try {
+      const profileRes = await fetchWithRetry(data.profileUrl, { credentials: 'include' });
+      if (profileRes.ok) {
+        const profileHtml = await profileRes.text();
+        const avatarResult = await chrome.runtime.sendMessage({
+          type: 'parseAvatarFromProfile',
+          html: profileHtml,
+        });
+        if (avatarResult?.success) authorAvatar = avatarResult.data || '';
+      }
+    } catch (err) {
+      authorLogger.warn('Profile fetch failed; avatar will be empty', { profileUrl: data.profileUrl, error: err.message });
+    }
+  }
+
   authorLogger.info('Fiction details parsed', {
     fictionId,
     fictionTitle: data?.fictionTitle || '(empty)',
     authorName: data?.authorName || '(empty)',
     hasCover: !!data?.coverUrl,
     hasProfile: !!data?.profileUrl,
-    hasAvatar: !!data?.authorAvatar
+    hasAvatar: !!authorAvatar,
   });
 
   if (!data?.authorName) {
     authorLogger.warn('Author name is empty after parse', { fictionId, data });
   }
 
-  return data;
+  const { profileId, ...rest } = data || {};
+  return { ...rest, authorAvatar };
 }
 
 // ============ SCANNING LOGIC ============
@@ -374,7 +405,14 @@ async function runFullScan(myFictionId) {
     const existingContacts = await db.getAll('contacts') || [];
     const contactCache = new Map(existingContacts.map(c => [c.authorName, c]));
 
+    let scanCancelled = false;
     for (let i = 0; i < chaptersToDownload.length; i++) {
+      const liveState = await getScanState();
+      if (liveState.status !== 'scanning') {
+        scanCancelled = true;
+        break;
+      }
+
       const chapter = chaptersToDownload[i];
 
       await setScanState({
@@ -490,13 +528,13 @@ async function runFullScan(myFictionId) {
 
           shoutoutsFound++;
 
-          // Notify content script
-          chrome.runtime.sendMessage({
+          // Notify content scripts (runs on royalroad.com tabs, needs tabs.sendMessage)
+          broadcastToTabs({
             type: 'shoutoutFound',
             chapterName: chapter.title,
             fictionTitle: details?.fictionTitle || 'Unknown',
-            authorName: details?.authorName || 'Unknown'
-          }).catch(() => {});
+            authorName: details?.authorName || 'Unknown',
+          });
         }
       } catch (err) {
         console.error('[RR Companion BG] Error processing chapter:', chapter.title, err);
@@ -614,6 +652,13 @@ async function runFullScan(myFictionId) {
       console.log('[RR Companion BG] Swap check complete:', { checked: swapsChecked, found: swapsFound });
     }
 
+    if (scanCancelled) {
+      console.log('[RR Companion BG] Scan cancelled by user');
+      await setScanState({ status: 'idle' });
+      broadcastToTabs({ type: 'scanCancelled' });
+      return;
+    }
+
     await setScanState({
       status: 'complete',
       message: `Done! Found ${shoutoutsFound} shoutout(s).`,
@@ -622,7 +667,7 @@ async function runFullScan(myFictionId) {
       completedAt: new Date().toISOString()
     });
 
-    chrome.runtime.sendMessage({ type: 'scanComplete', shoutoutsFound }).catch(() => {});
+    broadcastToTabs({ type: 'scanComplete', shoutoutsFound });
 
   } catch (err) {
     console.error('[RR Companion BG] Scan error:', err);
@@ -662,11 +707,19 @@ async function checkAllSwaps() {
     }
 
     await ensureOffscreenDocument();
+    await setCheckAllSwapsState({ status: 'running', current: 0, total: unswappedShoutouts.length });
 
     let swapsChecked = 0;
     let swapsFound = 0;
+    let checkAllCancelled = false;
 
     for (const shoutout of unswappedShoutouts) {
+      const liveState = await getCheckAllSwapsState();
+      if (liveState.status !== 'running') {
+        checkAllCancelled = true;
+        break;
+      }
+
       swapsChecked++;
 
       // Auto-heal: fetch missing author info
@@ -841,6 +894,14 @@ async function checkAllSwaps() {
       }
     }
 
+    await setCheckAllSwapsState({ status: 'idle' });
+
+    if (checkAllCancelled) {
+      console.log('[RR Companion BG] Check all swaps cancelled by user');
+      broadcastToTabs({ type: 'checkAllSwapsCancelled', checked: swapsChecked });
+      return { checked: swapsChecked, found: swapsFound, cancelled: true };
+    }
+
     console.log('[RR Companion BG] Check all swaps complete:', { checked: swapsChecked, found: swapsFound });
 
     // Broadcast completion
@@ -854,6 +915,7 @@ async function checkAllSwaps() {
 
   } catch (err) {
     console.error('[RR Companion BG] Check all swaps error:', err);
+    await setCheckAllSwapsState({ status: 'idle' });
     return { checked: 0, found: 0, error: err.message };
   }
 }
@@ -1243,7 +1305,9 @@ async function runImport(workbookData) {
     });
 
     // Process each sheet
+    let cancelled = false;
     for (const sheet of workbookData.sheets) {
+      if (cancelled) break;
       const isUnscheduled = sheet.name.toLowerCase() === 'unscheduled';
 
       // Find matching fiction
@@ -1261,6 +1325,13 @@ async function runImport(workbookData) {
       }
 
       for (const row of sheet.rows) {
+        // Check for user cancellation before each row
+        const liveState = await getImportState();
+        if (liveState.status !== 'importing') {
+          cancelled = true;
+          break;
+        }
+
         processedRows++;
 
         // Update progress every 5 rows
@@ -1437,6 +1508,13 @@ async function runImport(workbookData) {
       }
     }
 
+    if (cancelled) {
+      console.log('[RR Companion BG] Import cancelled by user');
+      await setImportState({ status: 'idle' });
+      broadcastToTabs({ type: 'importCancelled' });
+      return;
+    }
+
     await setImportState({
       status: 'complete',
       imported,
@@ -1586,6 +1664,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         console.error('[RR Companion BG] checkAllSwaps error:', err);
         sendResponse({ checked: 0, found: 0, error: err.message });
       });
+    return true;
+  }
+
+  if (message.type === 'cancelCheckAllSwaps') {
+    setCheckAllSwapsState({ status: 'idle' }).then(() => sendResponse({ cancelled: true }));
+    return true;
+  }
+
+  if (message.type === 'getCheckAllSwapsState') {
+    getCheckAllSwapsState().then(state => sendResponse(state));
     return true;
   }
 

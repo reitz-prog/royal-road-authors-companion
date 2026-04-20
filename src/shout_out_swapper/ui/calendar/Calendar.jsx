@@ -6,8 +6,8 @@ import { CalendarCard } from './CalendarCard.jsx';
 import { DropMenu } from './DropMenu.jsx';
 import { DayStackPopover } from './DayStackPopover.jsx';
 import { DangerConfirmDialog } from '../../../common/ui/dialog/Dialog.jsx';
-import { startFullScan, getScanState, onScanProgress, getSwapCheckState, checkAllSwaps } from '../../services/scanner.js';
-import { getImportState } from '../../services/exportImport.js';
+import { startFullScan, getScanState, onScanProgress, getSwapCheckState, checkAllSwaps, cancelCheckAllSwaps } from '../../services/scanner.js';
+import { getImportState, cancelImport } from '../../services/exportImport.js';
 import { ScannerModal } from '../scanner/ScannerModal.jsx';
 
 const logger = log.scope('calendar');
@@ -477,6 +477,21 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
         setCheckAllProgress(null);
         setCheckingAllSwaps(false);
       }
+      if (message.type === 'checkAllSwapsCancelled') {
+        setCheckAllProgress(null);
+        setCheckingAllSwaps(false);
+      }
+      if (message.type === 'scanCancelled') {
+        setScanProgress(null);
+        setScanning(false);
+      }
+      if (message.type === 'importCancelled') {
+        setImportProgress(null);
+        if (importPollRef.current) {
+          clearInterval(importPollRef.current);
+          importPollRef.current = null;
+        }
+      }
       // Import progress - trigger polling
       if (message.type === 'importProgress' || message.type === 'importStarted') {
         pollImportState();
@@ -620,7 +635,23 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
       {checkAllProgress && (
         <div class="rr-check-all-progress">
           <div class="rr-check-all-status">
-            <i class="fa fa-spinner fa-spin"></i> Checking {checkAllProgress.current}/{checkAllProgress.total}: {checkAllProgress.authorName}
+            <span>
+              <i class="fa fa-spinner fa-spin"></i> Checking {checkAllProgress.current}/{checkAllProgress.total}: {checkAllProgress.authorName}
+            </span>
+            <button
+              class="btn btn-sm btn-outline-danger rr-import-cancel-btn"
+              onClick={async () => {
+                try {
+                  await cancelCheckAllSwaps();
+                } catch (err) {
+                  logger.error('Failed to cancel check-all-swaps', err);
+                }
+                setCheckAllProgress(null);
+                setCheckingAllSwaps(false);
+              }}
+            >
+              Cancel
+            </button>
           </div>
           <div class="progress">
             <div
@@ -639,7 +670,28 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
             ) : importProgress.phase === 'error' ? (
               <><i class="fa fa-times"></i> Import error: {importProgress.message}</>
             ) : (
-              <><i class="fa fa-spinner fa-spin"></i> Importing: {importProgress.current}/{importProgress.total} rows ({importProgress.imported} imported)</>
+              <>
+                <span>
+                  <i class="fa fa-spinner fa-spin"></i> Importing: {importProgress.current}/{importProgress.total} rows ({importProgress.imported} imported)
+                </span>
+                <button
+                  class="btn btn-sm btn-outline-danger rr-import-cancel-btn"
+                  onClick={async () => {
+                    try {
+                      await cancelImport();
+                    } catch (err) {
+                      logger.error('Failed to cancel import', err);
+                    }
+                    setImportProgress(null);
+                    if (importPollRef.current) {
+                      clearInterval(importPollRef.current);
+                      importPollRef.current = null;
+                    }
+                  }}
+                >
+                  Cancel
+                </button>
+              </>
             )}
           </div>
           {importProgress.total > 0 && !importProgress.phase && (

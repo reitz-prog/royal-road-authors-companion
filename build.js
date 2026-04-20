@@ -22,7 +22,8 @@ const contentOptions = {
   entryPoints: {
     'content': 'src/content/index.jsx',
     'popup': 'src/popup/index.jsx',
-    'guild': 'src/guild/index.js'
+    'guild': 'src/guild/index.js',
+    'offscreen': 'src/offscreen/index.js'
   },
   outdir: 'dist',
   format: 'iife'

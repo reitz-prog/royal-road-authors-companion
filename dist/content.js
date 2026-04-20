@@ -1443,6 +1443,17 @@
       });
     });
   }
+  function cancelCheckAllSwaps() {
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ type: "cancelCheckAllSwaps" }, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else {
+          resolve(response);
+        }
+      });
+    });
+  }
   function onScanProgress(callback) {
     const listener = (message) => {
       if (message.type === "shoutoutFound") {
@@ -35058,6 +35069,108 @@
     return match ? match[1] : null;
   }
 
+  // src/common/utils/fictionDetails.js
+  function parseFictionDetails(html, fictionId) {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const fictionTitle = extractTitle(doc);
+    const coverUrl = extractCover(doc);
+    const { authorName, profileId, profileUrl } = extractAuthor(doc);
+    return {
+      fictionId: String(fictionId),
+      fictionTitle: fictionTitle || "Unknown",
+      fictionUrl: `https://www.royalroad.com/fiction/${fictionId}`,
+      coverUrl,
+      authorName,
+      profileId,
+      profileUrl
+    };
+  }
+  function parseAvatarFromProfile(html) {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    for (const img of doc.querySelectorAll('img[data-type="avatar"]')) {
+      const src = img.getAttribute("src") || "";
+      if (src.includes("royalroadcdn.com") && src.includes("/avatars/avatar-")) {
+        return src;
+      }
+    }
+    return "";
+  }
+  function extractTitle(doc) {
+    const ogTitle = doc.querySelector('meta[property="og:title"]')?.getAttribute("content");
+    if (ogTitle)
+      return ogTitle.replace(/\s*\|\s*Royal Road.*$/i, "").trim();
+    const coverAlt = doc.querySelector('img[data-type="cover"]')?.getAttribute("alt");
+    if (coverAlt)
+      return coverAlt.trim();
+    const h32 = doc.querySelector("h3.text-on-surface-strong")?.textContent?.trim();
+    if (h32)
+      return h32;
+    const h1 = doc.querySelector("h1.font-white")?.textContent?.trim();
+    if (h1)
+      return h1;
+    return "";
+  }
+  function extractCover(doc) {
+    const ogImage = doc.querySelector('meta[property="og:image"]')?.getAttribute("content");
+    if (ogImage)
+      return ogImage;
+    const coverImg = doc.querySelector('img[data-type="cover"]')?.getAttribute("src");
+    if (coverImg)
+      return coverImg;
+    const fallback = doc.querySelector("img.cover-art-image, .fiction-header img, .cover-art img")?.getAttribute("src");
+    return fallback || "";
+  }
+  function extractAuthor(doc) {
+    const metaAuthor = doc.querySelector('meta[property="books:author"], meta[name="author"]')?.getAttribute("content")?.trim() || "";
+    const avatarImgs = doc.querySelectorAll('a[href*="/profile/"] img[data-type="avatar"][alt]');
+    for (const img of avatarImgs) {
+      const alt = (img.getAttribute("alt") || "").trim();
+      if (!alt)
+        continue;
+      if (metaAuthor && alt !== metaAuthor)
+        continue;
+      const link = img.closest('a[href*="/profile/"]');
+      const m4 = (link?.getAttribute("href") || "").match(/\/profile\/(\d+)/);
+      if (m4) {
+        return {
+          authorName: alt,
+          profileId: m4[1],
+          profileUrl: `https://www.royalroad.com/profile/${m4[1]}`
+        };
+      }
+    }
+    if (metaAuthor) {
+      for (const link of doc.querySelectorAll('a[href*="/profile/"]')) {
+        const text = (link.textContent || "").trim();
+        if (text && (text === metaAuthor || text.includes(metaAuthor) || metaAuthor.includes(text))) {
+          const m4 = (link.getAttribute("href") || "").match(/\/profile\/(\d+)/);
+          if (m4) {
+            return {
+              authorName: metaAuthor,
+              profileId: m4[1],
+              profileUrl: `https://www.royalroad.com/profile/${m4[1]}`
+            };
+          }
+        }
+      }
+      return { authorName: metaAuthor, profileId: null, profileUrl: "" };
+    }
+    for (const link of doc.querySelectorAll('a[href*="/profile/"]')) {
+      const h4 = link.querySelector("h4");
+      if (!h4)
+        continue;
+      const m4 = (link.getAttribute("href") || "").match(/\/profile\/(\d+)/);
+      if (m4) {
+        return {
+          authorName: h4.textContent.trim(),
+          profileId: m4[1],
+          profileUrl: `https://www.royalroad.com/profile/${m4[1]}`
+        };
+      }
+    }
+    return { authorName: "", profileId: null, profileUrl: "" };
+  }
+
   // src/common/utils/fetch.js
   var logger4 = log.scope("fetch");
   function delay(ms) {
@@ -35096,9 +35209,10 @@
     }
     throw lastError || new Error("Fetch failed after retries");
   }
-  async function fetchPage(url) {
+  async function fetchFictionDetails(fictionId) {
+    const url = `https://www.royalroad.com/fiction/${fictionId}`;
+    logger4.info("Fetching fiction details", { fictionId });
     try {
-      logger4.debug("Fetching page", { url });
       const response = await fetchWithRetry(url, {
         credentials: "include",
         headers: { "Accept": "text/html" }
@@ -35108,94 +35222,28 @@
         return null;
       }
       const html = await response.text();
-      const parser = new DOMParser();
-      return parser.parseFromString(html, "text/html");
+      const details = parseFictionDetails(html, fictionId);
+      let authorAvatar = "";
+      if (details.profileId) {
+        try {
+          const profileRes = await fetchWithRetry(details.profileUrl, {
+            credentials: "include",
+            headers: { "Accept": "text/html" }
+          });
+          if (profileRes.ok) {
+            authorAvatar = parseAvatarFromProfile(await profileRes.text());
+          }
+        } catch (err) {
+          logger4.warn("Profile fetch failed; author avatar will be empty", { profileUrl: details.profileUrl, error: err.message });
+        }
+      }
+      const { profileId, ...rest } = details;
+      logger4.info("Fiction details fetched", { fictionId, fictionTitle: rest.fictionTitle, authorName: rest.authorName, hasAvatar: !!authorAvatar });
+      return { ...rest, authorAvatar };
     } catch (err) {
       logger4.error("Fetch error after retries", { url, error: err.message });
       return null;
     }
-  }
-  async function fetchFictionDetails(fictionId) {
-    const url = `https://www.royalroad.com/fiction/${fictionId}`;
-    logger4.info("Fetching fiction details", { fictionId });
-    const doc = await fetchPage(url);
-    if (!doc)
-      return null;
-    let fictionTitle = "";
-    let coverUrl = "";
-    let authorName = "";
-    let authorAvatar = "";
-    let profileUrl = "";
-    const h3Title = doc.querySelector("h3.text-on-surface-strong");
-    if (h3Title) {
-      fictionTitle = h3Title.textContent.trim();
-    }
-    if (!fictionTitle) {
-      const ogTitle = doc.querySelector('meta[property="og:title"]');
-      if (ogTitle) {
-        fictionTitle = ogTitle.getAttribute("content") || "";
-        fictionTitle = fictionTitle.replace(/\s*\|\s*Royal Road.*$/i, "").trim();
-      }
-    }
-    if (!fictionTitle) {
-      const coverImg = doc.querySelector('img[data-type="cover"]');
-      if (coverImg) {
-        fictionTitle = (coverImg.getAttribute("alt") || "").trim();
-      }
-    }
-    const ogImage = doc.querySelector('meta[property="og:image"]');
-    if (ogImage) {
-      coverUrl = ogImage.getAttribute("content") || "";
-    }
-    if (!coverUrl) {
-      const coverImg = doc.querySelector('img[data-type="cover"]');
-      if (coverImg) {
-        coverUrl = coverImg.getAttribute("src") || "";
-      }
-    }
-    const authorLinks = doc.querySelectorAll('a[href*="/profile/"]');
-    let profileId = null;
-    for (const link of authorLinks) {
-      const h4 = link.querySelector("h4.text-on-surface-strong");
-      if (h4) {
-        const href = link.getAttribute("href") || "";
-        const match = href.match(/\/profile\/(\d+)/);
-        if (match) {
-          profileId = match[1];
-          authorName = h4.textContent.trim();
-          profileUrl = `https://www.royalroad.com/profile/${profileId}`;
-          break;
-        }
-      }
-    }
-    if (profileId) {
-      for (const link of authorLinks) {
-        const href = link.getAttribute("href") || "";
-        if (href.includes(`/profile/${profileId}`)) {
-          const avatarImg = link.querySelector('img[data-type="avatar"]');
-          if (avatarImg) {
-            authorAvatar = avatarImg.getAttribute("src") || "";
-            break;
-          }
-        }
-      }
-    }
-    if (!authorName) {
-      const authorMeta = doc.querySelector('meta[property="books:author"]');
-      if (authorMeta) {
-        authorName = authorMeta.getAttribute("content") || "";
-      }
-    }
-    logger4.info("Fiction details fetched", { fictionId, fictionTitle, authorName });
-    return {
-      fictionId,
-      fictionTitle,
-      fictionUrl: url,
-      coverUrl,
-      authorName,
-      authorAvatar,
-      profileUrl
-    };
   }
 
   // src/shout_out_swapper/services/parser.js
@@ -35431,6 +35479,17 @@
   function getImportState() {
     return new Promise((resolve, reject) => {
       chrome.runtime.sendMessage({ type: "getImportState" }, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else {
+          resolve(response);
+        }
+      });
+    });
+  }
+  function cancelImport() {
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ type: "cancelImport" }, (response) => {
         if (chrome.runtime.lastError) {
           reject(new Error(chrome.runtime.lastError.message));
         } else {
@@ -36091,6 +36150,21 @@
           setCheckAllProgress(null);
           setCheckingAllSwaps(false);
         }
+        if (message.type === "checkAllSwapsCancelled") {
+          setCheckAllProgress(null);
+          setCheckingAllSwaps(false);
+        }
+        if (message.type === "scanCancelled") {
+          setScanProgress(null);
+          setScanning(false);
+        }
+        if (message.type === "importCancelled") {
+          setImportProgress(null);
+          if (importPollRef.current) {
+            clearInterval(importPollRef.current);
+            importPollRef.current = null;
+          }
+        }
         if (message.type === "importProgress" || message.type === "importStarted") {
           pollImportState();
         }
@@ -36234,13 +36308,31 @@
       ] }),
       checkAllProgress && /* @__PURE__ */ u4("div", { class: "rr-check-all-progress", children: [
         /* @__PURE__ */ u4("div", { class: "rr-check-all-status", children: [
-          /* @__PURE__ */ u4("i", { class: "fa fa-spinner fa-spin" }),
-          " Checking ",
-          checkAllProgress.current,
-          "/",
-          checkAllProgress.total,
-          ": ",
-          checkAllProgress.authorName
+          /* @__PURE__ */ u4("span", { children: [
+            /* @__PURE__ */ u4("i", { class: "fa fa-spinner fa-spin" }),
+            " Checking ",
+            checkAllProgress.current,
+            "/",
+            checkAllProgress.total,
+            ": ",
+            checkAllProgress.authorName
+          ] }),
+          /* @__PURE__ */ u4(
+            "button",
+            {
+              class: "btn btn-sm btn-outline-danger rr-import-cancel-btn",
+              onClick: async () => {
+                try {
+                  await cancelCheckAllSwaps();
+                } catch (err) {
+                  logger8.error("Failed to cancel check-all-swaps", err);
+                }
+                setCheckAllProgress(null);
+                setCheckingAllSwaps(false);
+              },
+              children: "Cancel"
+            }
+          )
         ] }),
         /* @__PURE__ */ u4("div", { class: "progress", children: /* @__PURE__ */ u4(
           "div",
@@ -36265,14 +36357,35 @@
           " Import error: ",
           importProgress.message
         ] }) : /* @__PURE__ */ u4(S, { children: [
-          /* @__PURE__ */ u4("i", { class: "fa fa-spinner fa-spin" }),
-          " Importing: ",
-          importProgress.current,
-          "/",
-          importProgress.total,
-          " rows (",
-          importProgress.imported,
-          " imported)"
+          /* @__PURE__ */ u4("span", { children: [
+            /* @__PURE__ */ u4("i", { class: "fa fa-spinner fa-spin" }),
+            " Importing: ",
+            importProgress.current,
+            "/",
+            importProgress.total,
+            " rows (",
+            importProgress.imported,
+            " imported)"
+          ] }),
+          /* @__PURE__ */ u4(
+            "button",
+            {
+              class: "btn btn-sm btn-outline-danger rr-import-cancel-btn",
+              onClick: async () => {
+                try {
+                  await cancelImport();
+                } catch (err) {
+                  logger8.error("Failed to cancel import", err);
+                }
+                setImportProgress(null);
+                if (importPollRef.current) {
+                  clearInterval(importPollRef.current);
+                  importPollRef.current = null;
+                }
+              },
+              children: "Cancel"
+            }
+          )
         ] }) }),
         importProgress.total > 0 && !importProgress.phase && /* @__PURE__ */ u4("div", { class: "progress", children: /* @__PURE__ */ u4(
           "div",
@@ -37974,8 +38087,14 @@
       onClose();
     };
     const handleDeleteDatabase = async () => {
-      logger13.info("Deleting database");
+      logger13.info("Deleting database and localStorage");
       setShowDeleteDbConfirm(false);
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch (err) {
+        logger13.warn("Failed to clear storage", err);
+      }
       const deleteRequest = indexedDB.deleteDatabase("rr-companion");
       deleteRequest.onsuccess = () => {
         logger13.info("Database deleted");
@@ -40769,10 +40888,20 @@
   font-size: 0.85rem;
   margin-bottom: 0.4rem;
   color: #17a2b8;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
 }
 
 .rr-check-all-status i {
   margin-right: 0.4rem;
+}
+
+.rr-import-cancel-btn {
+  font-size: 0.75rem;
+  padding: 0.1rem 0.5rem;
+  line-height: 1.4;
 }
 
 .rr-check-all-progress .progress {
