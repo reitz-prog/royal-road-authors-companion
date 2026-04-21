@@ -4,26 +4,17 @@
     const doc = new DOMParser().parseFromString(html, "text/html");
     const fictionTitle = extractTitle(doc);
     const coverUrl = extractCover(doc);
-    const { authorName, profileId, profileUrl } = extractAuthor(doc);
+    const { authorName, profileId, profileUrl, authorAvatar } = extractAuthor(doc);
     return {
       fictionId: String(fictionId),
       fictionTitle: fictionTitle || "Unknown",
       fictionUrl: `https://www.royalroad.com/fiction/${fictionId}`,
       coverUrl,
       authorName,
+      authorAvatar,
       profileId,
       profileUrl
     };
-  }
-  function parseAvatarFromProfile(html) {
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    for (const img of doc.querySelectorAll('img[data-type="avatar"]')) {
-      const src = img.getAttribute("src") || "";
-      if (src.includes("royalroadcdn.com") && src.includes("/avatars/avatar-")) {
-        return src;
-      }
-    }
-    return "";
   }
   function extractTitle(doc) {
     const ogTitle = doc.querySelector('meta[property="og:title"]')?.getAttribute("content");
@@ -61,13 +52,16 @@
         continue;
       const link = img.closest('a[href*="/profile/"]');
       const m = (link?.getAttribute("href") || "").match(/\/profile\/(\d+)/);
-      if (m) {
-        return {
-          authorName: alt,
-          profileId: m[1],
-          profileUrl: `https://www.royalroad.com/profile/${m[1]}`
-        };
-      }
+      if (!m)
+        continue;
+      const src = img.getAttribute("src") || "";
+      const avatarUrl = src.includes("royalroadcdn.com") && src.includes("/avatars/avatar-") ? src : "";
+      return {
+        authorName: alt,
+        profileId: m[1],
+        profileUrl: `https://www.royalroad.com/profile/${m[1]}`,
+        authorAvatar: avatarUrl
+      };
     }
     if (metaAuthor) {
       for (const link of doc.querySelectorAll('a[href*="/profile/"]')) {
@@ -78,12 +72,13 @@
             return {
               authorName: metaAuthor,
               profileId: m[1],
-              profileUrl: `https://www.royalroad.com/profile/${m[1]}`
+              profileUrl: `https://www.royalroad.com/profile/${m[1]}`,
+              authorAvatar: ""
             };
           }
         }
       }
-      return { authorName: metaAuthor, profileId: null, profileUrl: "" };
+      return { authorName: metaAuthor, profileId: null, profileUrl: "", authorAvatar: "" };
     }
     for (const link of doc.querySelectorAll('a[href*="/profile/"]')) {
       const h4 = link.querySelector("h4");
@@ -94,11 +89,12 @@
         return {
           authorName: h4.textContent.trim(),
           profileId: m[1],
-          profileUrl: `https://www.royalroad.com/profile/${m[1]}`
+          profileUrl: `https://www.royalroad.com/profile/${m[1]}`,
+          authorAvatar: ""
         };
       }
     }
-    return { authorName: "", profileId: null, profileUrl: "" };
+    return { authorName: "", profileId: null, profileUrl: "", authorAvatar: "" };
   }
 
   // src/offscreen/index.js
@@ -122,28 +118,47 @@
       }
     }
     fictionTitle = fictionTitle || "Unknown Fiction";
-    const chapterHrefRe = new RegExp(`^/fiction/${fictionId}/[^/]+/chapter/\\d+`);
     const chapters = [];
     const seen = /* @__PURE__ */ new Set();
-    for (const a of doc.querySelectorAll("a[href]")) {
-      const href = a.getAttribute("href") || "";
-      if (!chapterHrefRe.test(href))
+    for (const row of doc.querySelectorAll("#chapters tbody tr[data-url]")) {
+      const url = row.dataset.url;
+      if (!url || seen.has(url))
         continue;
-      if (seen.has(href))
+      const titleEl = row.querySelector("td:first-child a");
+      const dateEl = row.querySelector("td:last-child time, time[datetime]");
+      if (!titleEl)
         continue;
-      seen.add(href);
-      const block = a.closest("tr, li, article, .chapter-row, div");
-      const timeEl = block?.querySelector("time[datetime]") || a.parentElement?.querySelector("time[datetime]");
       let chapterDate = null;
-      const datetime = timeEl?.getAttribute("datetime");
-      if (datetime) {
+      const datetime = dateEl?.getAttribute("datetime");
+      if (datetime)
         chapterDate = new Date(datetime).toLocaleDateString("en-CA");
-      }
+      seen.add(url);
       chapters.push({
-        url: href.startsWith("http") ? href : `https://www.royalroad.com${href}`,
-        title: (a.textContent || "").trim() || "Untitled",
+        url: url.startsWith("http") ? url : `https://www.royalroad.com${url}`,
+        title: (titleEl.textContent || "").trim() || "Untitled",
         date: chapterDate
       });
+    }
+    if (chapters.length === 0) {
+      const chapterHrefRe = new RegExp(`^/fiction/${fictionId}/[^/]+/chapter/\\d+`);
+      for (const a of doc.querySelectorAll("a[href]")) {
+        const href = a.getAttribute("href") || "";
+        if (!chapterHrefRe.test(href))
+          continue;
+        if (seen.has(href))
+          continue;
+        const block = a.closest("tr, li, article, .chapter-row");
+        const timeEl = block?.querySelector("time[datetime]") || a.closest("div")?.querySelector("time[datetime]") || a.parentElement?.querySelector("time[datetime]");
+        if (!timeEl)
+          continue;
+        seen.add(href);
+        const chapterDate = timeEl.getAttribute("datetime") ? new Date(timeEl.getAttribute("datetime")).toLocaleDateString("en-CA") : null;
+        chapters.push({
+          url: href.startsWith("http") ? href : `https://www.royalroad.com${href}`,
+          title: (a.textContent || "").trim() || "Untitled",
+          date: chapterDate
+        });
+      }
     }
     return { fictionId, fictionTitle, chapters };
   }
@@ -211,15 +226,14 @@
     return results;
   }
   if (typeof window !== "undefined") {
-    window.__rrParsers = { parseChapterList, parseChapterNotes, extractShoutouts, parseFictionDetails, parseAvatarFromProfile };
+    window.__rrParsers = { parseChapterList, parseChapterNotes, extractShoutouts, parseFictionDetails };
   }
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const handlers = {
       parseChapterList: () => parseChapterList(request.html, request.fictionId),
       parseChapterNotes: () => parseChapterNotes(request.html, request.chapterUrl),
       extractShoutouts: () => extractShoutouts(request.html, request.excludeFictionId),
-      parseFictionDetails: () => parseFictionDetails(request.html, request.fictionId),
-      parseAvatarFromProfile: () => parseAvatarFromProfile(request.html)
+      parseFictionDetails: () => parseFictionDetails(request.html, request.fictionId)
     };
     const handler = handlers[request.type];
     if (!handler)

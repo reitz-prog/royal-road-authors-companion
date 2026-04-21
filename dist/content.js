@@ -771,6 +771,30 @@
     ] });
   }
 
+  // src/common/utils/date.js
+  function normalizeDate(value) {
+    if (value === null || value === void 0 || value === "")
+      return null;
+    if (value instanceof Date && !isNaN(value.getTime())) {
+      return value.toISOString().slice(0, 10);
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      const ms = (value - 25569) * 86400 * 1e3;
+      const d4 = new Date(ms);
+      if (!isNaN(d4.getTime()))
+        return d4.toISOString().slice(0, 10);
+    }
+    const s4 = String(value).trim();
+    if (!s4)
+      return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s4))
+      return s4;
+    const parsed = new Date(s4);
+    if (!isNaN(parsed.getTime()))
+      return parsed.toISOString().slice(0, 10);
+    return null;
+  }
+
   // src/shout_out_swapper/ui/calendar/CalendarCard.jsx
   function handleDragStart(e4, shoutout, sourceDate) {
     e4.dataTransfer.setData("text/plain", shoutout.id);
@@ -35074,26 +35098,17 @@
     const doc = new DOMParser().parseFromString(html, "text/html");
     const fictionTitle = extractTitle(doc);
     const coverUrl = extractCover(doc);
-    const { authorName, profileId, profileUrl } = extractAuthor(doc);
+    const { authorName, profileId, profileUrl, authorAvatar } = extractAuthor(doc);
     return {
       fictionId: String(fictionId),
       fictionTitle: fictionTitle || "Unknown",
       fictionUrl: `https://www.royalroad.com/fiction/${fictionId}`,
       coverUrl,
       authorName,
+      authorAvatar,
       profileId,
       profileUrl
     };
-  }
-  function parseAvatarFromProfile(html) {
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    for (const img of doc.querySelectorAll('img[data-type="avatar"]')) {
-      const src = img.getAttribute("src") || "";
-      if (src.includes("royalroadcdn.com") && src.includes("/avatars/avatar-")) {
-        return src;
-      }
-    }
-    return "";
   }
   function extractTitle(doc) {
     const ogTitle = doc.querySelector('meta[property="og:title"]')?.getAttribute("content");
@@ -35131,13 +35146,16 @@
         continue;
       const link = img.closest('a[href*="/profile/"]');
       const m4 = (link?.getAttribute("href") || "").match(/\/profile\/(\d+)/);
-      if (m4) {
-        return {
-          authorName: alt,
-          profileId: m4[1],
-          profileUrl: `https://www.royalroad.com/profile/${m4[1]}`
-        };
-      }
+      if (!m4)
+        continue;
+      const src = img.getAttribute("src") || "";
+      const avatarUrl = src.includes("royalroadcdn.com") && src.includes("/avatars/avatar-") ? src : "";
+      return {
+        authorName: alt,
+        profileId: m4[1],
+        profileUrl: `https://www.royalroad.com/profile/${m4[1]}`,
+        authorAvatar: avatarUrl
+      };
     }
     if (metaAuthor) {
       for (const link of doc.querySelectorAll('a[href*="/profile/"]')) {
@@ -35148,12 +35166,13 @@
             return {
               authorName: metaAuthor,
               profileId: m4[1],
-              profileUrl: `https://www.royalroad.com/profile/${m4[1]}`
+              profileUrl: `https://www.royalroad.com/profile/${m4[1]}`,
+              authorAvatar: ""
             };
           }
         }
       }
-      return { authorName: metaAuthor, profileId: null, profileUrl: "" };
+      return { authorName: metaAuthor, profileId: null, profileUrl: "", authorAvatar: "" };
     }
     for (const link of doc.querySelectorAll('a[href*="/profile/"]')) {
       const h4 = link.querySelector("h4");
@@ -35164,11 +35183,12 @@
         return {
           authorName: h4.textContent.trim(),
           profileId: m4[1],
-          profileUrl: `https://www.royalroad.com/profile/${m4[1]}`
+          profileUrl: `https://www.royalroad.com/profile/${m4[1]}`,
+          authorAvatar: ""
         };
       }
     }
-    return { authorName: "", profileId: null, profileUrl: "" };
+    return { authorName: "", profileId: null, profileUrl: "", authorAvatar: "" };
   }
 
   // src/common/utils/fetch.js
@@ -35222,24 +35242,9 @@
         return null;
       }
       const html = await response.text();
-      const details = parseFictionDetails(html, fictionId);
-      let authorAvatar = "";
-      if (details.profileId) {
-        try {
-          const profileRes = await fetchWithRetry(details.profileUrl, {
-            credentials: "include",
-            headers: { "Accept": "text/html" }
-          });
-          if (profileRes.ok) {
-            authorAvatar = parseAvatarFromProfile(await profileRes.text());
-          }
-        } catch (err) {
-          logger4.warn("Profile fetch failed; author avatar will be empty", { profileUrl: details.profileUrl, error: err.message });
-        }
-      }
-      const { profileId, ...rest } = details;
-      logger4.info("Fiction details fetched", { fictionId, fictionTitle: rest.fictionTitle, authorName: rest.authorName, hasAvatar: !!authorAvatar });
-      return { ...rest, authorAvatar };
+      const { profileId, ...details } = parseFictionDetails(html, fictionId);
+      logger4.info("Fiction details fetched", { fictionId, fictionTitle: details.fictionTitle, authorName: details.authorName, hasAvatar: !!details.authorAvatar });
+      return details;
     } catch (err) {
       logger4.error("Fetch error after retries", { url, error: err.message });
       return null;
@@ -35825,15 +35830,44 @@
     };
     const shoutoutsByDate = T2(() => {
       const map = /* @__PURE__ */ new Map();
+      let totalSchedules = 0;
+      let normalized = 0;
+      let dropped = 0;
+      let filteredOut = 0;
+      const rawSamples = [];
       shoutouts.forEach((s4) => {
         s4.schedules?.forEach((sched) => {
-          if (filterFictionId && sched.fictionId !== filterFictionId)
+          totalSchedules++;
+          if (filterFictionId && sched.fictionId !== filterFictionId) {
+            filteredOut++;
             return;
-          if (!map.has(sched.date))
-            map.set(sched.date, []);
-          map.get(sched.date).push(s4);
+          }
+          const key = normalizeDate(sched.date);
+          if (rawSamples.length < 5) {
+            rawSamples.push({
+              shoutoutId: s4.id,
+              rawDate: sched.date,
+              rawType: typeof sched.date,
+              normalizedKey: key,
+              fictionId: sched.fictionId,
+              chapter: sched.chapter || null
+            });
+          }
+          if (!key) {
+            dropped++;
+            return;
+          }
+          normalized++;
+          if (!map.has(key))
+            map.set(key, []);
+          map.get(key).push(s4);
         });
       });
+      logger8.info(
+        `Calendar grouping: shoutoutCount=${shoutouts.length} totalSchedules=${totalSchedules} normalized=${normalized} dropped=${dropped} filteredOut=${filteredOut} mapSize=${map.size} filterFictionId=${filterFictionId}`
+      );
+      logger8.info(`Calendar grouping rawSamples: ${JSON.stringify(rawSamples)}`);
+      logger8.info(`Calendar grouping mapKeys: ${JSON.stringify(Array.from(map.keys()).slice(0, 20))}`);
       return map;
     }, [shoutouts, filterFictionId]);
     const unscheduledShoutouts = T2(() => {
@@ -36178,8 +36212,12 @@
           });
           onScanCompleteRef.current?.();
         }
+        if (message.type === "scanStarted") {
+          pollScanState();
+        }
         if (message.type === "shoutoutFound") {
           onScanCompleteRef.current?.();
+          pollScanState();
         }
         if (message.type === "importComplete") {
           setImportProgress({
@@ -36241,6 +36279,21 @@
     };
     const daysInMonth = getDaysInMonth(month, year);
     const firstDay = getFirstDayOfMonth(month, year);
+    if (currentView === "calendar") {
+      const visibleDateStrs = Array.from({ length: daysInMonth }, (_3, i5) => {
+        const d4 = i5 + 1;
+        return `${year}-${String(month + 1).padStart(2, "0")}-${String(d4).padStart(2, "0")}`;
+      });
+      const hits = visibleDateStrs.map((ds) => ({ date: ds, count: (shoutoutsByDate.get(ds) || []).length })).filter((h4) => h4.count > 0);
+      logger8.info("Calendar view render", {
+        viewing: `${MONTHS[month]} ${year}`,
+        viewedMonthKey: `${year}-${String(month + 1).padStart(2, "0")}`,
+        mapSize: shoutoutsByDate.size,
+        mapKeysSample: Array.from(shoutoutsByDate.keys()).slice(0, 20),
+        hitsInVisibleMonth: hits,
+        totalHitsInVisibleMonth: hits.reduce((n3, h4) => n3 + h4.count, 0)
+      });
+    }
     return /* @__PURE__ */ u4("div", { class: "rr-calendar", children: [
       /* @__PURE__ */ u4("div", { class: "rr-calendar-header", children: [
         /* @__PURE__ */ u4("div", { class: "rr-view-tabs", children: [
@@ -36303,6 +36356,53 @@
               /* @__PURE__ */ u4("i", { class: "fa fa-search" }),
               " Scan Chapters"
             ]
+          }
+        ) })
+      ] }),
+      scanProgress && /* @__PURE__ */ u4("div", { class: "rr-check-all-progress", children: [
+        /* @__PURE__ */ u4("div", { class: "rr-check-all-status", children: scanProgress.phase === "complete" ? /* @__PURE__ */ u4(S, { children: [
+          /* @__PURE__ */ u4("i", { class: "fa fa-check" }),
+          " ",
+          scanProgress.message || "Scan complete"
+        ] }) : scanProgress.phase === "error" ? /* @__PURE__ */ u4(S, { children: [
+          /* @__PURE__ */ u4("i", { class: "fa fa-times" }),
+          " Scan error: ",
+          scanProgress.message
+        ] }) : /* @__PURE__ */ u4(S, { children: [
+          /* @__PURE__ */ u4("span", { children: [
+            /* @__PURE__ */ u4("i", { class: "fa fa-spinner fa-spin" }),
+            " ",
+            scanProgress.phase === "download" ? "Downloading chapters" : scanProgress.phase === "process" ? "Processing" : scanProgress.phase === "checkSwaps" ? "Checking swaps" : scanProgress.phase === "starting" ? "Starting scan" : "Scanning",
+            scanProgress.total > 0 && ` ${scanProgress.current}/${scanProgress.total}`,
+            scanProgress.title && `: ${scanProgress.title}`,
+            scanProgress.found > 0 && ` \u2014 found ${scanProgress.found}`
+          ] }),
+          /* @__PURE__ */ u4(
+            "button",
+            {
+              class: "btn btn-sm btn-outline-danger rr-import-cancel-btn",
+              onClick: async () => {
+                try {
+                  await cancelScan();
+                } catch (err) {
+                  logger8.error("Failed to cancel scan", err);
+                }
+                setScanProgress(null);
+                setScanning(false);
+                if (pollIntervalRef.current) {
+                  clearInterval(pollIntervalRef.current);
+                  pollIntervalRef.current = null;
+                }
+              },
+              children: "Cancel"
+            }
+          )
+        ] }) }),
+        scanProgress.total > 0 && !["complete", "error"].includes(scanProgress.phase) && /* @__PURE__ */ u4("div", { class: "progress", children: /* @__PURE__ */ u4(
+          "div",
+          {
+            class: "progress-bar",
+            style: { width: `${scanProgress.current / scanProgress.total * 100}%` }
           }
         ) })
       ] }),
@@ -38106,17 +38206,24 @@
     };
     const handleDownloadLogs = async () => {
       try {
+        const version2 = chrome.runtime.getManifest().version;
         const logsText = await log.getLogsAsText();
-        const blob = new Blob([logsText], { type: "text/plain" });
+        const header = `# Author's Companion logs
+# Version: ${version2}
+# Exported: ${(/* @__PURE__ */ new Date()).toISOString()}
+# User-Agent: ${navigator.userAgent}
+
+`;
+        const blob = new Blob([header + logsText], { type: "text/plain" });
         const url = URL.createObjectURL(blob);
         const a4 = document.createElement("a");
         a4.href = url;
-        a4.download = `rr-companion-logs-${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.txt`;
+        a4.download = `rr-companion-v${version2}-logs-${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.txt`;
         document.body.appendChild(a4);
         a4.click();
         document.body.removeChild(a4);
         URL.revokeObjectURL(url);
-        logger13.info("Logs downloaded");
+        logger13.info("Logs downloaded", { version: version2 });
       } catch (err) {
         logger13.error("Failed to download logs", err);
       }
@@ -38705,13 +38812,20 @@
         if (!resyncFictions) {
           setMyFictions(loadedMyFictions || []);
         }
-        logger16.info("Data loaded", {
-          shoutouts: loadedShoutouts?.length,
-          contacts: enrichedContacts?.length,
-          fictions: loadedFictions?.length,
-          myFictions: resyncFictions ? "resynced" : loadedMyFictions?.length,
-          myCodes: loadedMyCodes?.length
-        });
+        const sampleShoutouts = (loadedShoutouts || []).slice(0, 5).map((s4) => ({
+          id: s4.id,
+          fictionTitle: s4.fictionTitle,
+          schedules: (s4.schedules || []).map((sch) => ({
+            date: sch.date,
+            dateType: typeof sch.date,
+            fictionId: sch.fictionId,
+            chapter: sch.chapter || null
+          }))
+        }));
+        logger16.info(
+          `Data loaded: shoutouts=${loadedShoutouts?.length} contacts=${enrichedContacts?.length} myFictions=${resyncFictions ? "resynced" : loadedMyFictions?.length}`
+        );
+        logger16.info(`Data loaded sampleShoutouts: ${JSON.stringify(sampleShoutouts)}`);
       } catch (err) {
         logger16.error("Failed to load data", err);
       } finally {

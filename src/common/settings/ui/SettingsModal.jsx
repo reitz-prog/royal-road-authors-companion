@@ -73,17 +73,19 @@ export function SettingsModal({ isOpen, onClose, onClearAll }) {
 
   const handleDownloadLogs = async () => {
     try {
+      const version = chrome.runtime.getManifest().version;
       const logsText = await log.getLogsAsText();
-      const blob = new Blob([logsText], { type: 'text/plain' });
+      const header = `# Author's Companion logs\n# Version: ${version}\n# Exported: ${new Date().toISOString()}\n# User-Agent: ${navigator.userAgent}\n\n`;
+      const blob = new Blob([header + logsText], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `rr-companion-logs-${new Date().toISOString().split('T')[0]}.txt`;
+      a.download = `rr-companion-v${version}-logs-${new Date().toISOString().split('T')[0]}.txt`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      logger.info('Logs downloaded');
+      logger.info('Logs downloaded', { version });
     } catch (err) {
       logger.error('Failed to download logs', err);
     }

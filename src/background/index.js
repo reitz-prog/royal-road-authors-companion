@@ -27,6 +27,26 @@ async function setCheckAllSwapsState(state) {
 // Initialize DB when service worker starts
 let dbReady = false;
 
+// Normalize any date input (string, Date, Excel serial number) to "YYYY-MM-DD" or null.
+function normalizeDate(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    // Excel serial date: days since 1899-12-30 (accounting for 1900 leap bug)
+    const ms = (value - 25569) * 86400 * 1000;
+    const d = new Date(ms);
+    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  }
+  const s = String(value).trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const parsed = new Date(s);
+  if (!isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+  return null;
+}
+
 async function ensureDB() {
   if (!dbReady) {
     await db.openDB();
@@ -253,42 +273,23 @@ async function fetchFictionDetails(fictionId) {
     throw new Error(result?.error || 'Failed to parse fiction details');
   }
 
-  const data = result.data;
-
-  // Second step: fetch the profile page to get the real avatar CDN URL.
-  // The fiction page's avatar <img> often points at a placeholder; the profile page doesn't.
-  let authorAvatar = '';
-  if (data?.profileId && data?.profileUrl) {
-    try {
-      const profileRes = await fetchWithRetry(data.profileUrl, { credentials: 'include' });
-      if (profileRes.ok) {
-        const profileHtml = await profileRes.text();
-        const avatarResult = await chrome.runtime.sendMessage({
-          type: 'parseAvatarFromProfile',
-          html: profileHtml,
-        });
-        if (avatarResult?.success) authorAvatar = avatarResult.data || '';
-      }
-    } catch (err) {
-      authorLogger.warn('Profile fetch failed; avatar will be empty', { profileUrl: data.profileUrl, error: err.message });
-    }
-  }
+  const data = result.data || {};
 
   authorLogger.info('Fiction details parsed', {
     fictionId,
-    fictionTitle: data?.fictionTitle || '(empty)',
-    authorName: data?.authorName || '(empty)',
-    hasCover: !!data?.coverUrl,
-    hasProfile: !!data?.profileUrl,
-    hasAvatar: !!authorAvatar,
+    fictionTitle: data.fictionTitle || '(empty)',
+    authorName: data.authorName || '(empty)',
+    hasCover: !!data.coverUrl,
+    hasProfile: !!data.profileUrl,
+    hasAvatar: !!data.authorAvatar,
   });
 
-  if (!data?.authorName) {
+  if (!data.authorName) {
     authorLogger.warn('Author name is empty after parse', { fictionId, data });
   }
 
-  const { profileId, ...rest } = data || {};
-  return { ...rest, authorAvatar };
+  const { profileId, ...rest } = data;
+  return rest;
 }
 
 // ============ SCANNING LOGIC ============
@@ -542,10 +543,10 @@ async function runFullScan(myFictionId) {
     }
 
     // Phase 3: Check for swap returns (did they shout us back?)
-    // Get all shoutouts that don't have swappedDate yet
+    // Include unarchived shoutouts too — they may have shouted us first.
     const latestShoutouts = await db.getAll('shoutouts') || [];
     const unswappedShoutouts = latestShoutouts.filter(s =>
-      !s.swappedDate && s.fictionId && s.schedules?.some(sch => sch.chapter)
+      !s.swappedDate && s.fictionId
     );
 
     if (unswappedShoutouts.length > 0) {
@@ -684,10 +685,11 @@ async function checkAllSwaps() {
   try {
     await ensureDB();
 
-    // Get all shoutouts that are archived but not confirmed swapped
+    // Check every shoutout that isn't already confirmed swapped.
+    // Includes scheduled/unposted ones — they might have posted us first.
     const allShoutouts = await db.getAll('shoutouts') || [];
     const unswappedShoutouts = allShoutouts.filter(s =>
-      !s.swappedDate && s.fictionId && s.schedules?.some(sch => sch.chapter)
+      !s.swappedDate && s.fictionId
     );
 
     if (unswappedShoutouts.length === 0) {
@@ -1358,7 +1360,7 @@ async function runImport(workbookData) {
 
         try {
           const code = row['Code'] || '';
-          const date = row['Date'] ? String(row['Date']).trim() : null;
+          const date = normalizeDate(row['Date']);
 
           if (!code.trim()) {
             skipped++;
@@ -1558,6 +1560,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ started: false, reason: 'Already scanning' });
       } else {
         await setScanState({ status: 'scanning', phase: 'init', current: 0, total: 0 });
+        broadcastToTabs({ type: 'scanStarted', fictionId: message.fictionId });
         runFullScan(message.fictionId);
         sendResponse({ started: true });
       }

@@ -16,7 +16,7 @@ export function parseFictionDetails(html, fictionId) {
 
   const fictionTitle = extractTitle(doc);
   const coverUrl = extractCover(doc);
-  const { authorName, profileId, profileUrl } = extractAuthor(doc);
+  const { authorName, profileId, profileUrl, authorAvatar } = extractAuthor(doc);
 
   return {
     fictionId: String(fictionId),
@@ -24,20 +24,10 @@ export function parseFictionDetails(html, fictionId) {
     fictionUrl: `https://www.royalroad.com/fiction/${fictionId}`,
     coverUrl,
     authorName,
+    authorAvatar,
     profileId,
     profileUrl,
   };
-}
-
-export function parseAvatarFromProfile(html) {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  for (const img of doc.querySelectorAll('img[data-type="avatar"]')) {
-    const src = img.getAttribute('src') || '';
-    if (src.includes('royalroadcdn.com') && src.includes('/avatars/avatar-')) {
-      return src;
-    }
-  }
-  return '';
 }
 
 function extractTitle(doc) {
@@ -71,7 +61,8 @@ function extractAuthor(doc) {
   const metaAuthor = doc.querySelector('meta[property="books:author"], meta[name="author"]')?.getAttribute('content')?.trim() || '';
 
   // Primary: <a href="/profile/<id>"> containing <img data-type="avatar" alt="<name>">.
-  // Single stable contract gives profileId + authorName atomically.
+  // Gives profileId + authorName + avatar in one shot from the fiction page's
+  // profile bar — no second fetch needed.
   const avatarImgs = doc.querySelectorAll('a[href*="/profile/"] img[data-type="avatar"][alt]');
   for (const img of avatarImgs) {
     const alt = (img.getAttribute('alt') || '').trim();
@@ -79,13 +70,17 @@ function extractAuthor(doc) {
     if (metaAuthor && alt !== metaAuthor) continue;
     const link = img.closest('a[href*="/profile/"]');
     const m = (link?.getAttribute('href') || '').match(/\/profile\/(\d+)/);
-    if (m) {
-      return {
-        authorName: alt,
-        profileId: m[1],
-        profileUrl: `https://www.royalroad.com/profile/${m[1]}`,
-      };
-    }
+    if (!m) continue;
+
+    const src = img.getAttribute('src') || '';
+    const avatarUrl = src.includes('royalroadcdn.com') && src.includes('/avatars/avatar-') ? src : '';
+
+    return {
+      authorName: alt,
+      profileId: m[1],
+      profileUrl: `https://www.royalroad.com/profile/${m[1]}`,
+      authorAvatar: avatarUrl,
+    };
   }
 
   // Fallback: meta-tag name, match against any /profile/ link by text content.
@@ -99,11 +94,12 @@ function extractAuthor(doc) {
             authorName: metaAuthor,
             profileId: m[1],
             profileUrl: `https://www.royalroad.com/profile/${m[1]}`,
+            authorAvatar: '',
           };
         }
       }
     }
-    return { authorName: metaAuthor, profileId: null, profileUrl: '' };
+    return { authorName: metaAuthor, profileId: null, profileUrl: '', authorAvatar: '' };
   }
 
   // Last resort: any profile link with an <h4> (legacy layout).
@@ -116,9 +112,10 @@ function extractAuthor(doc) {
         authorName: h4.textContent.trim(),
         profileId: m[1],
         profileUrl: `https://www.royalroad.com/profile/${m[1]}`,
+        authorAvatar: '',
       };
     }
   }
 
-  return { authorName: '', profileId: null, profileUrl: '' };
+  return { authorName: '', profileId: null, profileUrl: '', authorAvatar: '' };
 }

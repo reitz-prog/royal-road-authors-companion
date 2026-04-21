@@ -2,11 +2,12 @@
 import { h } from 'preact';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'preact/hooks';
 import { log } from '../../../common/logging/core.js';
+import { normalizeDate } from '../../../common/utils/date.js';
 import { CalendarCard } from './CalendarCard.jsx';
 import { DropMenu } from './DropMenu.jsx';
 import { DayStackPopover } from './DayStackPopover.jsx';
 import { DangerConfirmDialog } from '../../../common/ui/dialog/Dialog.jsx';
-import { startFullScan, getScanState, onScanProgress, getSwapCheckState, checkAllSwaps, cancelCheckAllSwaps } from '../../services/scanner.js';
+import { startFullScan, getScanState, onScanProgress, getSwapCheckState, checkAllSwaps, cancelCheckAllSwaps, cancelScan } from '../../services/scanner.js';
 import { getImportState, cancelImport } from '../../services/exportImport.js';
 import { ScannerModal } from '../scanner/ScannerModal.jsx';
 
@@ -86,16 +87,48 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
     setYear(now.getFullYear());
   };
 
-  // Group shoutouts by date
+  // Group shoutouts by date — normalize whatever's in storage so legacy
+  // entries with broken date strings (e.g. Date-stringified Excel cells)
+  // still group under a usable YYYY-MM-DD key.
   const shoutoutsByDate = useMemo(() => {
     const map = new Map();
+    let totalSchedules = 0;
+    let normalized = 0;
+    let dropped = 0;
+    let filteredOut = 0;
+    const rawSamples = [];
     shoutouts.forEach(s => {
       s.schedules?.forEach(sched => {
-        if (filterFictionId && sched.fictionId !== filterFictionId) return;
-        if (!map.has(sched.date)) map.set(sched.date, []);
-        map.get(sched.date).push(s);
+        totalSchedules++;
+        if (filterFictionId && sched.fictionId !== filterFictionId) {
+          filteredOut++;
+          return;
+        }
+        const key = normalizeDate(sched.date);
+        if (rawSamples.length < 5) {
+          rawSamples.push({
+            shoutoutId: s.id,
+            rawDate: sched.date,
+            rawType: typeof sched.date,
+            normalizedKey: key,
+            fictionId: sched.fictionId,
+            chapter: sched.chapter || null,
+          });
+        }
+        if (!key) {
+          dropped++;
+          return;
+        }
+        normalized++;
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(s);
       });
     });
+    logger.info(
+      `Calendar grouping: shoutoutCount=${shoutouts.length} totalSchedules=${totalSchedules} normalized=${normalized} dropped=${dropped} filteredOut=${filteredOut} mapSize=${map.size} filterFictionId=${filterFictionId}`
+    );
+    logger.info(`Calendar grouping rawSamples: ${JSON.stringify(rawSamples)}`);
+    logger.info(`Calendar grouping mapKeys: ${JSON.stringify(Array.from(map.keys()).slice(0, 20))}`);
     return map;
   }, [shoutouts, filterFictionId]);
 
@@ -509,9 +542,14 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
         // Trigger data refresh
         onScanCompleteRef.current?.();
       }
-      // Shoutout found during scan - refresh data incrementally
+      // Scan started from elsewhere (e.g. Scanner Modal) - start showing progress
+      if (message.type === 'scanStarted') {
+        pollScanState();
+      }
+      // Shoutout found during scan - refresh data incrementally + make sure banner is live
       if (message.type === 'shoutoutFound') {
         onScanCompleteRef.current?.();
+        pollScanState();
       }
       // Import complete
       if (message.type === 'importComplete') {
@@ -583,6 +621,27 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
   const daysInMonth = getDaysInMonth(month, year);
   const firstDay = getFirstDayOfMonth(month, year);
 
+  // Diagnostic: log every time the calendar view re-renders, so we can see
+  // which month is shown, which date keys exist in the map, and how many
+  // shoutouts hit each visible day.
+  if (currentView === 'calendar') {
+    const visibleDateStrs = Array.from({ length: daysInMonth }, (_, i) => {
+      const d = i + 1;
+      return `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    });
+    const hits = visibleDateStrs
+      .map(ds => ({ date: ds, count: (shoutoutsByDate.get(ds) || []).length }))
+      .filter(h => h.count > 0);
+    logger.info('Calendar view render', {
+      viewing: `${MONTHS[month]} ${year}`,
+      viewedMonthKey: `${year}-${String(month + 1).padStart(2, '0')}`,
+      mapSize: shoutoutsByDate.size,
+      mapKeysSample: Array.from(shoutoutsByDate.keys()).slice(0, 20),
+      hitsInVisibleMonth: hits,
+      totalHitsInVisibleMonth: hits.reduce((n, h) => n + h.count, 0),
+    });
+  }
+
   return (
     <div class="rr-calendar">
       <div class="rr-calendar-header">
@@ -631,6 +690,62 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
           </div>
         )}
       </div>
+
+      {scanProgress && (
+        <div class="rr-check-all-progress">
+          <div class="rr-check-all-status">
+            {scanProgress.phase === 'complete' ? (
+              <><i class="fa fa-check"></i> {scanProgress.message || 'Scan complete'}</>
+            ) : scanProgress.phase === 'error' ? (
+              <><i class="fa fa-times"></i> Scan error: {scanProgress.message}</>
+            ) : (
+              <>
+                <span>
+                  <i class="fa fa-spinner fa-spin"></i>{' '}
+                  {scanProgress.phase === 'download'
+                    ? 'Downloading chapters'
+                    : scanProgress.phase === 'process'
+                    ? 'Processing'
+                    : scanProgress.phase === 'checkSwaps'
+                    ? 'Checking swaps'
+                    : scanProgress.phase === 'starting'
+                    ? 'Starting scan'
+                    : 'Scanning'}
+                  {scanProgress.total > 0 && ` ${scanProgress.current}/${scanProgress.total}`}
+                  {scanProgress.title && `: ${scanProgress.title}`}
+                  {scanProgress.found > 0 && ` — found ${scanProgress.found}`}
+                </span>
+                <button
+                  class="btn btn-sm btn-outline-danger rr-import-cancel-btn"
+                  onClick={async () => {
+                    try {
+                      await cancelScan();
+                    } catch (err) {
+                      logger.error('Failed to cancel scan', err);
+                    }
+                    setScanProgress(null);
+                    setScanning(false);
+                    if (pollIntervalRef.current) {
+                      clearInterval(pollIntervalRef.current);
+                      pollIntervalRef.current = null;
+                    }
+                  }}
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+          </div>
+          {scanProgress.total > 0 && !['complete', 'error'].includes(scanProgress.phase) && (
+            <div class="progress">
+              <div
+                class="progress-bar"
+                style={{ width: `${(scanProgress.current / scanProgress.total) * 100}%` }}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {checkAllProgress && (
         <div class="rr-check-all-progress">

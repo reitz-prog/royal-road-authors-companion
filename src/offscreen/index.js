@@ -1,5 +1,5 @@
 // Royal Road Companion - Offscreen Document for DOM Parsing
-import { parseFictionDetails, parseAvatarFromProfile } from '../common/utils/fictionDetails.js';
+import { parseFictionDetails } from '../common/utils/fictionDetails.js';
 
 console.log('[RR Companion Offscreen] Loaded');
 
@@ -23,29 +23,58 @@ function parseChapterList(html, fictionId) {
   }
   fictionTitle = fictionTitle || 'Unknown Fiction';
 
-  const chapterHrefRe = new RegExp(`^/fiction/${fictionId}/[^/]+/chapter/\\d+`);
   const chapters = [];
   const seen = new Set();
 
-  for (const a of doc.querySelectorAll('a[href]')) {
-    const href = a.getAttribute('href') || '';
-    if (!chapterHrefRe.test(href)) continue;
-    if (seen.has(href)) continue;
-    seen.add(href);
+  // Strategy 1: the chapter list table — most reliable when RR's current layout is intact.
+  for (const row of doc.querySelectorAll('#chapters tbody tr[data-url]')) {
+    const url = row.dataset.url;
+    if (!url || seen.has(url)) continue;
+    const titleEl = row.querySelector('td:first-child a');
+    const dateEl = row.querySelector('td:last-child time, time[datetime]');
+    if (!titleEl) continue;
 
-    const block = a.closest('tr, li, article, .chapter-row, div');
-    const timeEl = block?.querySelector('time[datetime]') || a.parentElement?.querySelector('time[datetime]');
     let chapterDate = null;
-    const datetime = timeEl?.getAttribute('datetime');
-    if (datetime) {
-      chapterDate = new Date(datetime).toLocaleDateString('en-CA');
-    }
+    const datetime = dateEl?.getAttribute('datetime');
+    if (datetime) chapterDate = new Date(datetime).toLocaleDateString('en-CA');
 
+    seen.add(url);
     chapters.push({
-      url: href.startsWith('http') ? href : `https://www.royalroad.com${href}`,
-      title: (a.textContent || '').trim() || 'Untitled',
+      url: url.startsWith('http') ? url : `https://www.royalroad.com${url}`,
+      title: (titleEl.textContent || '').trim() || 'Untitled',
       date: chapterDate,
     });
+  }
+
+  // Strategy 2 (fallback): URL pattern + nearby <time>. Only runs if the table
+  // selector found nothing (RR likely restructured the layout). The time
+  // requirement filters out buttons like "Continue Reading" which share the
+  // /fiction/<id>/.../chapter/<n> URL pattern but have no associated time.
+  if (chapters.length === 0) {
+    const chapterHrefRe = new RegExp(`^/fiction/${fictionId}/[^/]+/chapter/\\d+`);
+    for (const a of doc.querySelectorAll('a[href]')) {
+      const href = a.getAttribute('href') || '';
+      if (!chapterHrefRe.test(href)) continue;
+      if (seen.has(href)) continue;
+
+      const block = a.closest('tr, li, article, .chapter-row');
+      const timeEl =
+        block?.querySelector('time[datetime]') ||
+        a.closest('div')?.querySelector('time[datetime]') ||
+        a.parentElement?.querySelector('time[datetime]');
+      if (!timeEl) continue;
+
+      seen.add(href);
+      const chapterDate = timeEl.getAttribute('datetime')
+        ? new Date(timeEl.getAttribute('datetime')).toLocaleDateString('en-CA')
+        : null;
+
+      chapters.push({
+        url: href.startsWith('http') ? href : `https://www.royalroad.com${href}`,
+        title: (a.textContent || '').trim() || 'Untitled',
+        date: chapterDate,
+      });
+    }
   }
 
   return { fictionId, fictionTitle, chapters };
@@ -128,7 +157,7 @@ function extractShoutouts(html, excludeFictionId) {
 }
 
 if (typeof window !== 'undefined') {
-  window.__rrParsers = { parseChapterList, parseChapterNotes, extractShoutouts, parseFictionDetails, parseAvatarFromProfile };
+  window.__rrParsers = { parseChapterList, parseChapterNotes, extractShoutouts, parseFictionDetails };
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -137,7 +166,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     parseChapterNotes: () => parseChapterNotes(request.html, request.chapterUrl),
     extractShoutouts: () => extractShoutouts(request.html, request.excludeFictionId),
     parseFictionDetails: () => parseFictionDetails(request.html, request.fictionId),
-    parseAvatarFromProfile: () => parseAvatarFromProfile(request.html),
   };
 
   const handler = handlers[request.type];

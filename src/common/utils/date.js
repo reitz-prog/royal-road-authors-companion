@@ -1,6 +1,29 @@
 // Date utilities
 
 /**
+ * Normalize any date input (string, Date, Excel serial number, weird locale string)
+ * to "YYYY-MM-DD" or null. Used at both write-time (import) and read-time (calendar
+ * grouping) so legacy entries with broken date strings still render.
+ */
+export function normalizeDate(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const ms = (value - 25569) * 86400 * 1000;
+    const d = new Date(ms);
+    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  }
+  const s = String(value).trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const parsed = new Date(s);
+  if (!isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+  return null;
+}
+
+/**
  * Get today's date as YYYY-MM-DD
  */
 export function today() {

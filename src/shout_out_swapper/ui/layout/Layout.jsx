@@ -137,13 +137,20 @@ export function Layout({ routeType = 'main-dashboard' }) {
       if (!resyncFictions) {
         setMyFictions(loadedMyFictions || []);
       }
-      logger.info('Data loaded', {
-        shoutouts: loadedShoutouts?.length,
-        contacts: enrichedContacts?.length,
-        fictions: loadedFictions?.length,
-        myFictions: resyncFictions ? 'resynced' : loadedMyFictions?.length,
-        myCodes: loadedMyCodes?.length
-      });
+      const sampleShoutouts = (loadedShoutouts || []).slice(0, 5).map(s => ({
+        id: s.id,
+        fictionTitle: s.fictionTitle,
+        schedules: (s.schedules || []).map(sch => ({
+          date: sch.date,
+          dateType: typeof sch.date,
+          fictionId: sch.fictionId,
+          chapter: sch.chapter || null,
+        })),
+      }));
+      logger.info(
+        `Data loaded: shoutouts=${loadedShoutouts?.length} contacts=${enrichedContacts?.length} myFictions=${resyncFictions ? 'resynced' : loadedMyFictions?.length}`
+      );
+      logger.info(`Data loaded sampleShoutouts: ${JSON.stringify(sampleShoutouts)}`);
     } catch (err) {
       logger.error('Failed to load data', err);
     } finally {

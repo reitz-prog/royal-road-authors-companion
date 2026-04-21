@@ -1,7 +1,7 @@
 // Fetch utilities for Royal Road pages
 
 import { log } from '../logging/core.js';
-import { parseFictionDetails, parseAvatarFromProfile } from './fictionDetails.js';
+import { parseFictionDetails } from './fictionDetails.js';
 
 const logger = log.scope('fetch');
 
@@ -103,26 +103,9 @@ export async function fetchFictionDetails(fictionId) {
     }
 
     const html = await response.text();
-    const details = parseFictionDetails(html, fictionId);
-
-    let authorAvatar = '';
-    if (details.profileId) {
-      try {
-        const profileRes = await fetchWithRetry(details.profileUrl, {
-          credentials: 'include',
-          headers: { 'Accept': 'text/html' },
-        });
-        if (profileRes.ok) {
-          authorAvatar = parseAvatarFromProfile(await profileRes.text());
-        }
-      } catch (err) {
-        logger.warn('Profile fetch failed; author avatar will be empty', { profileUrl: details.profileUrl, error: err.message });
-      }
-    }
-
-    const { profileId, ...rest } = details;
-    logger.info('Fiction details fetched', { fictionId, fictionTitle: rest.fictionTitle, authorName: rest.authorName, hasAvatar: !!authorAvatar });
-    return { ...rest, authorAvatar };
+    const { profileId, ...details } = parseFictionDetails(html, fictionId);
+    logger.info('Fiction details fetched', { fictionId, fictionTitle: details.fictionTitle, authorName: details.authorName, hasAvatar: !!details.authorAvatar });
+    return details;
   } catch (err) {
     logger.error('Fetch error after retries', { url, error: err.message });
     return null;

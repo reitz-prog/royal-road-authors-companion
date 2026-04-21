@@ -254,6 +254,28 @@ async function setCheckAllSwapsState(state) {
   await chrome.storage.local.set({ [CHECK_ALL_SWAPS_STATE_KEY]: state });
 }
 var dbReady = false;
+function normalizeDate(value) {
+  if (value === null || value === void 0 || value === "")
+    return null;
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const ms = (value - 25569) * 86400 * 1e3;
+    const d = new Date(ms);
+    if (!isNaN(d.getTime()))
+      return d.toISOString().slice(0, 10);
+  }
+  const s = String(value).trim();
+  if (!s)
+    return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s))
+    return s;
+  const parsed = new Date(s);
+  if (!isNaN(parsed.getTime()))
+    return parsed.toISOString().slice(0, 10);
+  return null;
+}
 async function ensureDB() {
   if (!dbReady) {
     await openDB();
@@ -421,37 +443,20 @@ async function fetchFictionDetails(fictionId) {
     authorLogger.error("Failed to parse fiction details", { fictionId, error: result?.error });
     throw new Error(result?.error || "Failed to parse fiction details");
   }
-  const data = result.data;
-  let authorAvatar = "";
-  if (data?.profileId && data?.profileUrl) {
-    try {
-      const profileRes = await fetchWithRetry(data.profileUrl, { credentials: "include" });
-      if (profileRes.ok) {
-        const profileHtml = await profileRes.text();
-        const avatarResult = await chrome.runtime.sendMessage({
-          type: "parseAvatarFromProfile",
-          html: profileHtml
-        });
-        if (avatarResult?.success)
-          authorAvatar = avatarResult.data || "";
-      }
-    } catch (err) {
-      authorLogger.warn("Profile fetch failed; avatar will be empty", { profileUrl: data.profileUrl, error: err.message });
-    }
-  }
+  const data = result.data || {};
   authorLogger.info("Fiction details parsed", {
     fictionId,
-    fictionTitle: data?.fictionTitle || "(empty)",
-    authorName: data?.authorName || "(empty)",
-    hasCover: !!data?.coverUrl,
-    hasProfile: !!data?.profileUrl,
-    hasAvatar: !!authorAvatar
+    fictionTitle: data.fictionTitle || "(empty)",
+    authorName: data.authorName || "(empty)",
+    hasCover: !!data.coverUrl,
+    hasProfile: !!data.profileUrl,
+    hasAvatar: !!data.authorAvatar
   });
-  if (!data?.authorName) {
+  if (!data.authorName) {
     authorLogger.warn("Author name is empty after parse", { fictionId, data });
   }
-  const { profileId, ...rest } = data || {};
-  return { ...rest, authorAvatar };
+  const { profileId, ...rest } = data;
+  return rest;
 }
 async function batchDownloadChapters(chapters, batchSize = 5, delayMs = 1e3, onProgress = null) {
   const results = /* @__PURE__ */ new Map();
@@ -654,7 +659,7 @@ async function runFullScan(myFictionId) {
     }
     const latestShoutouts = await getAll("shoutouts") || [];
     const unswappedShoutouts = latestShoutouts.filter(
-      (s) => !s.swappedDate && s.fictionId && s.schedules?.some((sch) => sch.chapter)
+      (s) => !s.swappedDate && s.fictionId
     );
     if (unswappedShoutouts.length > 0) {
       const myFictions = await getAll("myFictions") || [];
@@ -768,7 +773,7 @@ async function checkAllSwaps() {
     await ensureDB();
     const allShoutouts = await getAll("shoutouts") || [];
     const unswappedShoutouts = allShoutouts.filter(
-      (s) => !s.swappedDate && s.fictionId && s.schedules?.some((sch) => sch.chapter)
+      (s) => !s.swappedDate && s.fictionId
     );
     if (unswappedShoutouts.length === 0) {
       console.log("[RR Companion BG] No unswapped shoutouts to check");
@@ -1267,7 +1272,7 @@ async function runImport(workbookData) {
         }
         try {
           const code = row["Code"] || "";
-          const date = row["Date"] ? String(row["Date"]).trim() : null;
+          const date = normalizeDate(row["Date"]);
           if (!code.trim()) {
             skipped++;
             continue;
@@ -1424,6 +1429,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ started: false, reason: "Already scanning" });
       } else {
         await setScanState({ status: "scanning", phase: "init", current: 0, total: 0 });
+        broadcastToTabs({ type: "scanStarted", fictionId: message.fictionId });
         runFullScan(message.fictionId);
         sendResponse({ started: true });
       }
