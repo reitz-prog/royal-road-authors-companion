@@ -605,8 +605,8 @@ async function runFullScan(myFictionId) {
             );
             if (alreadyArchived)
               continue;
-            const pendingIdx = schedules.findIndex(
-              (s) => String(s.fictionId) === String(myFictionId) && !s.chapter
+            let pendingIdx = schedules.findIndex(
+              (s) => String(s.fictionId) === String(myFictionId) && !s.chapter && s.date === chapter.date
             );
             if (pendingIdx >= 0) {
               schedules[pendingIdx] = { ...schedules[pendingIdx], chapter: chapter.title, chapterUrl: chapter.url };
@@ -762,19 +762,32 @@ async function runFullScan(myFictionId) {
       completedAt: (/* @__PURE__ */ new Date()).toISOString()
     });
     broadcastToTabs({ type: "scanComplete", shoutoutsFound });
+    setTimeout(() => {
+      setScanState({ status: "idle" }).catch(() => {
+      });
+    }, 1500);
   } catch (err) {
     console.error("[RR Companion BG] Scan error:", err);
     await setScanState({ status: "error", error: err.message });
+    setTimeout(() => {
+      setScanState({ status: "idle" }).catch(() => {
+      });
+    }, 3e3);
   }
 }
-async function checkAllSwaps() {
-  console.log("[RR Companion BG] === CHECK ALL SWAPS ===");
+async function checkAllSwaps(opts = {}) {
+  const { fictionId = null } = opts;
+  console.log("[RR Companion BG] === CHECK ALL SWAPS ===", fictionId ? { fictionId } : "(all)");
   try {
     await ensureDB();
     const allShoutouts = await getAll("shoutouts") || [];
-    const unswappedShoutouts = allShoutouts.filter(
-      (s) => !s.swappedDate && s.fictionId
-    );
+    const unswappedShoutouts = allShoutouts.filter((s) => {
+      if (s.swappedDate || !s.fictionId)
+        return false;
+      if (fictionId && String(s.fictionId) !== String(fictionId))
+        return false;
+      return true;
+    });
     if (unswappedShoutouts.length === 0) {
       console.log("[RR Companion BG] No unswapped shoutouts to check");
       return { checked: 0, found: 0 };
@@ -1508,8 +1521,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message.type === "checkAllSwaps") {
-    console.log("[RR Companion BG] Received checkAllSwaps message");
-    checkAllSwaps().then((result) => {
+    console.log("[RR Companion BG] Received checkAllSwaps message", message.fictionId ? { fictionId: message.fictionId } : "");
+    checkAllSwaps({ fictionId: message.fictionId || null }).then((result) => {
       console.log("[RR Companion BG] checkAllSwaps result:", result);
       sendResponse(result);
     }).catch((err) => {

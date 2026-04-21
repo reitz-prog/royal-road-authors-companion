@@ -44,12 +44,49 @@ function getPublishDate() {
   return getToday();
 }
 
-// Extract fiction ID from URL path
+// Extract fiction ID for the page we're on.
+//
+//   /chapters/new/<fictionId>       — number IS the fiction ID
+//   /chapters/edit/<chapterId>      — number is the CHAPTER ID (not fiction)
+//   /chapters/editdraft/<chapterId> — same — look up fiction from the DOM
+//
+// Returns null when we can't determine the fiction id with confidence,
+// which makes the calendar show every shoutout rather than filtering to
+// an incorrect id.
 function extractFictionIdFromPath() {
   const path = window.location.pathname;
-  // Match patterns like /author-dashboard/chapters/new/12345
-  const match = path.match(/\/author-dashboard\/chapters\/(?:new|edit|editdraft)\/(\d+)/);
-  return match ? match[1] : null;
+
+  // /new/<fictionId> — the path number is the fiction id.
+  const newMatch = path.match(/\/author-dashboard\/chapters\/new\/(\d+)/);
+  if (newMatch) return newMatch[1];
+
+  // /edit/... or /editdraft/... — path number is the chapter id. Look in the
+  // page DOM for the fiction id instead.
+  if (/\/author-dashboard\/chapters\/(?:edit|editdraft)\//.test(path)) {
+    return extractFictionIdFromPage();
+  }
+
+  return null;
+}
+
+function extractFictionIdFromPage() {
+  // 1) Hidden form input — most Royal Road edit forms carry `FictionId`.
+  const nameVariants = ['FictionId', 'fictionId', 'fiction_id'];
+  for (const name of nameVariants) {
+    const input = document.querySelector(`input[name="${name}"]`);
+    if (input?.value) return String(input.value);
+  }
+
+  // 2) A link back to the fiction page, e.g. `<a href="/fiction/12345/...">`.
+  const link = document.querySelector('a[href*="/fiction/"]');
+  const linkMatch = link?.getAttribute('href')?.match(/\/fiction\/(\d+)/);
+  if (linkMatch) return linkMatch[1];
+
+  // 3) A data attribute anywhere on the page.
+  const dataEl = document.querySelector('[data-fiction-id]');
+  if (dataEl) return dataEl.getAttribute('data-fiction-id');
+
+  return null;
 }
 
 export function TodayBanner() {
@@ -154,107 +191,265 @@ export function TodayBanner() {
     setSetting('bannerMinimized', newState);
   };
 
-  // Helper to get editor elements for a field
+  // Helper to get editor elements for a field.
+  // Royal Road has been through two rich-text editors:
+  //   - Redactor (rx-editor / rx-source) — older pages still use it.
+  //   - TinyMCE  (iframe `${fieldId}_ifr`, id `${fieldId}_ifr`) — current.
+  // We probe for both so the companion works on any chapter-edit page.
   const getEditorElements = (fieldId) => {
     const formField = document.getElementById(fieldId);
     if (!formField) return null;
 
+    // Redactor (legacy).
     const parentDiv = formField.parentElement;
     const rxContainer = parentDiv?.querySelector('.rx-container');
     const rxEditor = rxContainer?.querySelector('.rx-editor[contenteditable="true"]');
     const rxSource = rxContainer?.querySelector('textarea.rx-source');
 
-    return { formField, rxContainer, rxEditor, rxSource };
+    // TinyMCE (current). The iframe sits next to the hidden textarea and
+    // hosts the real contenteditable body.
+    const tinyIframe = document.getElementById(`${fieldId}_ifr`);
+    const tinyDoc = tinyIframe?.contentDocument || tinyIframe?.contentWindow?.document || null;
+    const tinyBody = tinyDoc?.body || null;
+
+    return { formField, rxContainer, rxEditor, rxSource, tinyIframe, tinyBody };
   };
 
-  // Helper to check if code exists in an editor
+  // Helper to check if the exact code exists in the editor.
+  // For TinyMCE we strip its internal `data-mce-*` annotations before
+  // comparing so the match is against the canonical HTML — the same shape
+  // that's stored in IndexedDB.
   const codeExistsIn = (elements, code) => {
     if (!elements || !code) return false;
-    const html = elements.rxEditor?.innerHTML || '';
+    const rxHtml = elements.rxEditor?.innerHTML || '';
+    const tinyHtml = stripMceAttrs(elements.tinyBody?.innerHTML || '');
     const value = elements.formField?.value || '';
-    // Check if the code (or a significant part of it) exists
-    return html.includes(code) || value.includes(code);
+    if (rxHtml.includes(code) || tinyHtml.includes(code) || value.includes(code)) {
+      return true;
+    }
+
+    // Fallback — the stored code was hand-edited at some point. Match by
+    // URL signature.
+    const { hrefs, srcs } = extractCodeSignatures(code);
+    const probeRoot = elements.tinyBody || elements.rxEditor;
+    if (probeRoot) {
+      for (const href of hrefs) {
+        try { if (probeRoot.querySelector(`a[href="${CSS.escape(href)}"]`)) return true; } catch {}
+      }
+      for (const src of srcs) {
+        try { if (probeRoot.querySelector(`img[src="${CSS.escape(src)}"]`)) return true; } catch {}
+      }
+    }
+    return false;
   };
 
-  // Helper to remove code from an editor
+  // Helper to collapse whitespace/<br> pairs left behind by a removal so
+  // the surrounding paragraph doesn't grow extra blank gaps.
+  const collapseHtmlBlanks = (html) => {
+    return html
+      .replace(/<br\s*\/?>\s*<br\s*\/?>\s*$/i, '')
+      .replace(/^\s*<br\s*\/?>\s*<br\s*\/?>/i, '')
+      .replace(/<br\s*\/?>\s*<br\s*\/?>\s*<br\s*\/?>\s*<br\s*\/?>/gi, '<br><br>')
+      .replace(/(<p[^>]*>)\s*(<\/p>)/gi, '$1$2') // drop empty <p>
+      .replace(/(<p[^>]*><\/p>\s*){3,}/gi, '<p></p><p></p>');
+  };
+
+  // Strip TinyMCE's internal bookkeeping attributes so HTML stored in the
+  // editor can be compared exactly against the raw code string we kept in
+  // IndexedDB. TinyMCE adds `data-mce-href`, `data-mce-src`, `data-mce-style`,
+  // `data-mce-selected`, `data-mce-bogus`, etc. on insertion — those break
+  // a plain `innerHTML.includes(code)` check.
+  const stripMceAttrs = (html) =>
+    (html || '')
+      .replace(/\s?data-mce-[a-z0-9-]+="[^"]*"/g, '')
+      .replace(/\s?data-mce-[a-z0-9-]+='[^']*'/g, '')
+      .replace(/\s?data-mce-[a-z0-9-]+(?=[>\s])/g, '');
+
+  // Parse the code string and extract the signature URLs — typically the
+  // shoutout's anchor hrefs and image srcs. Used as a fallback when exact
+  // match fails (e.g. the user manually edited the code).
+  const extractCodeSignatures = (code) => {
+    const hrefs = new Set();
+    const srcs = new Set();
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(code, 'text/html');
+      doc.querySelectorAll('a[href]').forEach((a) => hrefs.add(a.getAttribute('href')));
+      doc.querySelectorAll('img[src]').forEach((img) => srcs.add(img.getAttribute('src')));
+    } catch {
+      /* ignore */
+    }
+    return { hrefs, srcs };
+  };
+
+  // Semantic removal — finds anchor/image nodes that match the code's URL
+  // signatures and removes the smallest containing block. Preserves any
+  // unrelated content in the same paragraph.
+  const removeCodeFromDom = (rootEl, code) => {
+    if (!rootEl || !code) return false;
+    const { hrefs, srcs } = extractCodeSignatures(code);
+    if (hrefs.size === 0 && srcs.size === 0) return false;
+
+    const hits = new Set();
+    hrefs.forEach((href) => {
+      try {
+        rootEl.querySelectorAll(`a[href="${CSS.escape(href)}"]`).forEach((el) => hits.add(el));
+      } catch { /* invalid selector — ignore */ }
+    });
+    srcs.forEach((src) => {
+      try {
+        rootEl.querySelectorAll(`img[src="${CSS.escape(src)}"]`).forEach((img) => {
+          hits.add(img);
+          const wrap = img.closest('a');
+          if (wrap) hits.add(wrap);
+        });
+      } catch { /* ignore */ }
+    });
+    if (hits.size === 0) return false;
+
+    // Promote each hit to its nearest block ancestor so we remove the whole
+    // shoutout line rather than leaving a dangling <p><br></p>.
+    const blocks = new Set();
+    hits.forEach((el) => {
+      const block = el.closest('p, div, li, blockquote, figure') || el;
+      blocks.add(block);
+    });
+
+    blocks.forEach((block) => {
+      // Only remove if the block's text content is empty *apart from* the
+      // shoutout imagery/link — preserves user text sharing a paragraph.
+      const clone = block.cloneNode(true);
+      hits.forEach((el) => {
+        clone.querySelectorAll('*').forEach((n) => {
+          if (n.outerHTML === el.outerHTML) n.remove();
+        });
+      });
+      const remainingText = clone.textContent?.trim() || '';
+      const remainingMedia = clone.querySelector('img, iframe');
+      if (remainingText || remainingMedia) {
+        // Paragraph has other content — just delete our hits inside it.
+        hits.forEach((el) => {
+          if (block.contains(el)) el.remove();
+        });
+      } else {
+        // Shoutout-only paragraph — drop the whole block.
+        block.remove();
+      }
+    });
+    return true;
+  };
+
+  const collapseTextBlanks = (value) =>
+    value
+      .replace(/\n\n\s*$/g, '')
+      .replace(/^\s*\n\n/g, '')
+      .replace(/\n\n\n\n/g, '\n\n');
+
+  // Helper to remove code from an editor.
+  //
+  // Strategy, in order — stop at the first one that finds a match:
+  //   1. Strip `data-mce-*` bookkeeping attrs from the editor's HTML, then
+  //      exact-string match against the code we have in IndexedDB. This
+  //      removes the *whole* code block (link + image + whatever it
+  //      contains), leaving surrounding user content intact.
+  //   2. DOM signature match (anchor href / image src) for cases where the
+  //      stored code and the editor HTML diverged (user hand-edited).
+  //   3. Raw-string replace on the original HTML as a last resort.
   const removeCodeFrom = (elements, code) => {
     if (!elements) return;
+    const { formField, rxEditor, rxSource, tinyBody } = elements;
 
-    const { formField, rxEditor, rxSource } = elements;
-
-    // Remove from visual editor
+    // Redactor visual editor — its innerHTML is already canonical.
     if (rxEditor) {
-      let html = rxEditor.innerHTML || '';
-      // Remove the code and any surrounding <br> tags
-      html = html.replace(code, '');
-      html = html.replace(/<br\s*\/?>\s*<br\s*\/?>\s*$/i, '');
-      html = html.replace(/^\s*<br\s*\/?>\s*<br\s*\/?>/i, '');
-      html = html.replace(/<br\s*\/?>\s*<br\s*\/?>\s*<br\s*\/?>\s*<br\s*\/?>/gi, '<br><br>');
-      rxEditor.innerHTML = html.trim() || '<p data-rx-type="text" contenteditable="true" data-rx-first-level="true"></p>';
-
-      if (!html.trim()) {
+      const original = rxEditor.innerHTML || '';
+      if (original.includes(code)) {
+        rxEditor.innerHTML = collapseHtmlBlanks(original.replace(code, ''));
+      } else if (!removeCodeFromDom(rxEditor, code)) {
+        rxEditor.innerHTML = collapseHtmlBlanks(original);
+      }
+      const html = (rxEditor.innerHTML || '').trim();
+      if (!html) {
+        rxEditor.innerHTML = '<p data-rx-type="text" contenteditable="true" data-rx-first-level="true"></p>';
         rxEditor.classList.add('rx-empty', 'rx-placeholder');
       }
     }
 
-    // Remove from form field
+    // TinyMCE visual body (inside iframe) — strip data-mce-* first so the
+    // code we saved in the DB matches exactly.
+    if (tinyBody) {
+      const original = tinyBody.innerHTML || '';
+      const normalized = stripMceAttrs(original);
+      if (normalized.includes(code)) {
+        tinyBody.innerHTML = collapseHtmlBlanks(normalized.replace(code, ''));
+      } else if (!removeCodeFromDom(tinyBody, code)) {
+        // Last-resort: original innerHTML replace. Won't match if TinyMCE
+        // annotated; kept only so we don't silently no-op if data-mce
+        // normalization wasn't the reason.
+        tinyBody.innerHTML = collapseHtmlBlanks(original.replace(code, ''));
+      }
+      const html = (tinyBody.innerHTML || '').trim();
+      if (!html) {
+        tinyBody.innerHTML = '<p><br data-mce-bogus="1"></p>';
+      }
+    }
+
+    // Underlying textarea (both editors share this canonical field)
     if (formField) {
-      let value = formField.value || '';
-      value = value.replace(code, '');
-      value = value.replace(/\n\n\s*$/g, '');
-      value = value.replace(/^\s*\n\n/g, '');
-      value = value.replace(/\n\n\n\n/g, '\n\n');
-      formField.value = value.trim();
+      formField.value = collapseTextBlanks((formField.value || '').replace(code, '')).trim();
     }
 
-    // Remove from rx-source
+    // Redactor's source mirror
     if (rxSource) {
-      let value = rxSource.value || '';
-      value = value.replace(code, '');
-      value = value.replace(/\n\n\s*$/g, '');
-      value = value.replace(/^\s*\n\n/g, '');
-      value = value.replace(/\n\n\n\n/g, '\n\n');
-      rxSource.value = value.trim();
+      rxSource.value = collapseTextBlanks((rxSource.value || '').replace(code, '')).trim();
     }
 
-    // Trigger events
+    // Trigger input events everywhere so each editor's change listener fires
+    // and the hidden textarea syncs.
     rxEditor?.dispatchEvent(new Event('input', { bubbles: true }));
+    tinyBody?.dispatchEvent(new Event('input', { bubbles: true }));
     formField?.dispatchEvent(new Event('input', { bubbles: true }));
     rxSource?.dispatchEvent(new Event('input', { bubbles: true }));
   };
 
-  // Helper to add code to an editor
+  // Helper to add code to an editor (handles both legacy + TinyMCE).
   const addCodeTo = (elements, code) => {
     if (!elements) return;
+    const { formField, rxEditor, rxSource, tinyBody } = elements;
 
-    const { formField, rxEditor, rxSource } = elements;
+    const isHtmlEmpty = (html) =>
+      !html?.trim() ||
+      html === '<p><br></p>' ||
+      html === '<p></p>' ||
+      /^<p[^>]*><\/p>$/.test(html) ||
+      /^<p[^>]*><br[^>]*><\/p>$/i.test(html); // TinyMCE's empty placeholder
 
-    // Add to visual editor
+    // Redactor visual editor
     if (rxEditor) {
       const currentHtml = rxEditor.innerHTML || '';
-      const isEmpty = !currentHtml.trim() ||
-                      currentHtml === '<p><br></p>' ||
-                      currentHtml === '<p></p>' ||
-                      /^<p[^>]*><\/p>$/.test(currentHtml);
-
-      rxEditor.innerHTML = isEmpty ? code : currentHtml + '<br><br>' + code;
+      rxEditor.innerHTML = isHtmlEmpty(currentHtml) ? code : currentHtml + '<br><br>' + code;
       rxEditor.classList.remove('rx-empty', 'rx-placeholder');
     }
 
-    // Add to form field
+    // TinyMCE visual body (inside iframe)
+    if (tinyBody) {
+      const currentHtml = tinyBody.innerHTML || '';
+      tinyBody.innerHTML = isHtmlEmpty(currentHtml) ? code : currentHtml + '<br><br>' + code;
+    }
+
+    // Shared canonical textarea
     if (formField) {
       const currentValue = formField.value || '';
       formField.value = !currentValue.trim() ? code : currentValue + '\n\n' + code;
     }
 
-    // Add to rx-source
+    // Redactor's source mirror
     if (rxSource) {
       const currentSource = rxSource.value || '';
       rxSource.value = !currentSource.trim() ? code : currentSource + '\n\n' + code;
     }
 
-    // Trigger events
     rxEditor?.dispatchEvent(new Event('input', { bubbles: true }));
+    tinyBody?.dispatchEvent(new Event('input', { bubbles: true }));
     formField?.dispatchEvent(new Event('input', { bubbles: true }));
     rxSource?.dispatchEvent(new Event('input', { bubbles: true }));
   };
@@ -284,7 +479,14 @@ export function TodayBanner() {
       const targetElements = getEditorElements(targetField);
       const otherElements = getEditorElements(otherField);
 
-      if (!targetElements?.rxEditor) {
+      // Accept either the legacy Redactor editor or the new TinyMCE iframe
+      // body. The shared underlying textarea is also acceptable as a last
+      // resort.
+      const hasTarget =
+        targetElements?.rxEditor ||
+        targetElements?.tinyBody ||
+        targetElements?.formField;
+      if (!hasTarget) {
         logger.warn('Could not find target editor', { targetField });
         return;
       }

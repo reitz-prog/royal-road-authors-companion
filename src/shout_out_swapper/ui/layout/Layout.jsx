@@ -88,10 +88,21 @@ export function Layout({ routeType = 'main-dashboard' }) {
       logger.warn('Could not sync myFictions', err);
     });
 
-    // Listen for swap check completion to reload data
-    const handleMessage = (message) => {
+    // Listen for swap check or scan completion to re-run auto-archive and
+    // reload data. A scan can publish today's chapter in the middle of a
+    // session — without this, the user would have to refresh the page to
+    // see today's scheduled shoutout moved into the archive.
+    const handleMessage = async (message) => {
       if (message.type === 'swapCheckComplete') {
         logger.info('Swap check complete, reloading data');
+        loadData();
+      } else if (message.type === 'scanComplete') {
+        logger.info('Scan complete, re-running auto-archive + reloading data');
+        try {
+          await autoArchiveToday();
+        } catch (err) {
+          logger.warn('Post-scan auto-archive failed', err);
+        }
         loadData();
       }
     };

@@ -480,13 +480,22 @@ async function runFullScan(myFictionId) {
             );
             if (alreadyArchived) continue;
 
-            const pendingIdx = schedules.findIndex(
-              s => String(s.fictionId) === String(myFictionId) && !s.chapter
+            // Prefer archiving onto a pending schedule whose date matches the
+            // chapter's publish date. Without the date check, a Monday
+            // schedule would silently end up labelled "Wednesday" just
+            // because Wednesday's chapter was the one we scanned.
+            let pendingIdx = schedules.findIndex(
+              s => String(s.fictionId) === String(myFictionId) &&
+                   !s.chapter &&
+                   s.date === chapter.date
             );
 
             if (pendingIdx >= 0) {
               schedules[pendingIdx] = { ...schedules[pendingIdx], chapter: chapter.title, chapterUrl: chapter.url };
             } else {
+              // No pending schedule for this exact date → record as a new,
+              // already-archived entry. The user's original scheduled date
+              // (if any) stays untouched.
               schedules.push({
                 fictionId: String(myFictionId),
                 date: chapter.date,
@@ -670,27 +679,44 @@ async function runFullScan(myFictionId) {
 
     broadcastToTabs({ type: 'scanComplete', shoutoutsFound });
 
+    // Decay to idle after the UI has had time to consume the `complete`
+    // status (poll interval is 500ms). Keeps reopening the scanner modal
+    // from re-triggering onScanComplete against stale state.
+    setTimeout(() => {
+      setScanState({ status: 'idle' }).catch(() => {});
+    }, 1500);
+
   } catch (err) {
     console.error('[RR Companion BG] Scan error:', err);
     await setScanState({ status: 'error', error: err.message });
+    // Same decay for error state so the modal can be reopened cleanly.
+    setTimeout(() => {
+      setScanState({ status: 'idle' }).catch(() => {});
+    }, 3000);
   }
 }
 
 // ============ CHECK ALL SWAPS ============
 // Check all archived shoutouts to see if other authors have shouted us back
 
-async function checkAllSwaps() {
-  console.log('[RR Companion BG] === CHECK ALL SWAPS ===');
+async function checkAllSwaps(opts = {}) {
+  const { fictionId = null } = opts;
+  console.log('[RR Companion BG] === CHECK ALL SWAPS ===', fictionId ? { fictionId } : '(all)');
 
   try {
     await ensureDB();
 
     // Check every shoutout that isn't already confirmed swapped.
     // Includes scheduled/unposted ones — they might have posted us first.
+    // When `fictionId` is set, scope to shoutouts belonging to that fiction
+    // only — useful right after scanning one fiction so we don't re-check
+    // every previous fiction's shoutouts.
     const allShoutouts = await db.getAll('shoutouts') || [];
-    const unswappedShoutouts = allShoutouts.filter(s =>
-      !s.swappedDate && s.fictionId
-    );
+    const unswappedShoutouts = allShoutouts.filter(s => {
+      if (s.swappedDate || !s.fictionId) return false;
+      if (fictionId && String(s.fictionId) !== String(fictionId)) return false;
+      return true;
+    });
 
     if (unswappedShoutouts.length === 0) {
       console.log('[RR Companion BG] No unswapped shoutouts to check');
@@ -1655,10 +1681,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // Check ALL swaps - scan all unswapped shoutouts
+  // Check ALL swaps - scan all unswapped shoutouts.
+  // Optional `fictionId` scopes the check to a single fiction's shoutouts.
   if (message.type === 'checkAllSwaps') {
-    console.log('[RR Companion BG] Received checkAllSwaps message');
-    checkAllSwaps()
+    console.log('[RR Companion BG] Received checkAllSwaps message', message.fictionId ? { fictionId: message.fictionId } : '');
+    checkAllSwaps({ fictionId: message.fictionId || null })
       .then(result => {
         console.log('[RR Companion BG] checkAllSwaps result:', result);
         sendResponse(result);

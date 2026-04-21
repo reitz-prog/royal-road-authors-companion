@@ -113,10 +113,13 @@ export function autoArchiveToday() {
   });
 }
 
-// Check all swaps - scan all unswapped shoutouts to see if they returned
-export function checkAllSwaps() {
+// Check all swaps - scan all unswapped shoutouts to see if they returned.
+// Pass a `fictionId` to scope the check to a single fiction's shoutouts.
+export function checkAllSwaps(opts = {}) {
+  const message = { type: 'checkAllSwaps' };
+  if (opts.fictionId) message.fictionId = String(opts.fictionId);
   return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage({ type: 'checkAllSwaps' }, (response) => {
+    chrome.runtime.sendMessage(message, (response) => {
       if (chrome.runtime.lastError) {
         reject(new Error(chrome.runtime.lastError.message));
       } else {

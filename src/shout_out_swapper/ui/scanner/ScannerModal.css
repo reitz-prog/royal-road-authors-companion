@@ -144,3 +144,46 @@
 .rr-scanner-checkbox input {
   cursor: pointer;
 }
+
+.rr-scanner-batch-label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  margin-bottom: 0.35rem;
+  opacity: 0.85;
+}
+
+.rr-scanner-phase {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.625rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.04);
+  width: fit-content;
+}
+.rr-scanner-phase-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #999;
+  flex-shrink: 0;
+}
+.rr-scanner-phase--idle .rr-scanner-phase-dot { background: #9ca3af; }
+.rr-scanner-phase--scanning .rr-scanner-phase-dot {
+  background: #3b82f6;
+  animation: rr-scanner-pulse 1.2s ease-in-out infinite;
+}
+.rr-scanner-phase--swap-check .rr-scanner-phase-dot {
+  background: #a855f7;
+  animation: rr-scanner-pulse 1.2s ease-in-out infinite;
+}
+.rr-scanner-phase--complete .rr-scanner-phase-dot { background: #22c55e; }
+.rr-scanner-phase--error .rr-scanner-phase-dot { background: #ef4444; }
+@keyframes rr-scanner-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(0.85); }
+}

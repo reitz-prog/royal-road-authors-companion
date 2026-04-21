@@ -982,7 +982,12 @@
       }, 100);
       return () => document.removeEventListener("click", handleClick);
     }, [isOpen, onClose]);
-    logger2.info("Popover render", { isOpen, shoutoutsCount: shoutouts.length, itemsCount: items.length });
+    const lastSigRef = A2("");
+    const sig = `${isOpen}|${shoutouts.length}|${items.length}`;
+    if (sig !== lastSigRef.current) {
+      logger2.info("Popover render", { isOpen, shoutoutsCount: shoutouts.length, itemsCount: items.length });
+      lastSigRef.current = sig;
+    }
     if (!isOpen || shoutouts.length === 0)
       return null;
     const displayItems = items.length > 0 ? items : shoutouts;
@@ -1456,9 +1461,12 @@
       });
     });
   }
-  function checkAllSwaps() {
+  function checkAllSwaps(opts = {}) {
+    const message = { type: "checkAllSwaps" };
+    if (opts.fictionId)
+      message.fictionId = String(opts.fictionId);
     return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage({ type: "checkAllSwaps" }, (response) => {
+      chrome.runtime.sendMessage(message, (response) => {
         if (chrome.runtime.lastError) {
           reject(new Error(chrome.runtime.lastError.message));
         } else {
@@ -35543,11 +35551,28 @@
     const pollIntervalRef = A2(null);
     const cleanupListenerRef = A2(null);
     const checkSwapsAfterRef = A2(checkSwapsAfter);
+    const sawScanningRef = A2(false);
+    const inBatchRef = A2(false);
+    const lastScannedFictionIdRef = A2(null);
+    const modalOpenedAtRef = A2(null);
+    const [batchLabel, setBatchLabel] = d3(null);
+    const [phase, setPhase] = d3("idle");
+    const wasOpenRef = A2(false);
     y2(() => {
-      if (isOpen) {
+      if (isOpen && !wasOpenRef.current) {
         setSelectedFictionId(currentFictionId || myFictions[0]?.fictionId || "");
+        setSummary(null);
+        setResults([]);
+        setProgress(null);
+        setBatchLabel(null);
+        setPhase("idle");
+        sawScanningRef.current = false;
+        inBatchRef.current = false;
+        lastScannedFictionIdRef.current = null;
+        modalOpenedAtRef.current = (/* @__PURE__ */ new Date()).toISOString();
       }
-    }, [isOpen, currentFictionId, myFictions]);
+      wasOpenRef.current = isOpen;
+    }, [isOpen]);
     y2(() => {
       checkSwapsAfterRef.current = checkSwapsAfter;
     }, [checkSwapsAfter]);
@@ -35555,7 +35580,9 @@
       try {
         const state = await getScanState();
         if (state.status === "scanning") {
+          sawScanningRef.current = true;
           setScanning(true);
+          setPhase("scanning");
           setProgress({
             current: state.current || 0,
             total: state.total || 0,
@@ -35564,7 +35591,23 @@
             shoutoutsFound: state.shoutoutsFound || 0
           });
         } else if (state.status === "complete") {
+          if (inBatchRef.current)
+            return;
+          if (!sawScanningRef.current) {
+            setScanning(false);
+            setProgress(null);
+            stopPolling();
+            return;
+          }
+          if (state.completedAt && modalOpenedAtRef.current && state.completedAt < modalOpenedAtRef.current) {
+            setScanning(false);
+            setProgress(null);
+            stopPolling();
+            return;
+          }
+          sawScanningRef.current = false;
           setScanning(false);
+          setPhase("complete");
           setSummary({
             scanned: state.total || 0,
             found: state.shoutoutsFound || 0,
@@ -35575,8 +35618,13 @@
           if (onScanComplete)
             onScanComplete();
           if (checkSwapsAfterRef.current && state.shoutoutsFound > 0) {
+            const scope = lastScannedFictionIdRef.current || void 0;
             setCheckingSwaps(true);
-            checkAllSwaps().finally(() => setCheckingSwaps(false));
+            setPhase("swap-check");
+            checkAllSwaps(scope ? { fictionId: scope } : {}).finally(() => {
+              setCheckingSwaps(false);
+              setPhase("complete");
+            });
           }
         } else if (state.status === "error") {
           setScanning(false);
@@ -35625,29 +35673,100 @@
         stopPolling();
       };
     }, [isOpen, pollScanState, stopPolling]);
-    const handleScan = q2(async () => {
-      if (!selectedFictionId)
-        return;
+    const runScan = q2(async (fictionId) => {
+      sawScanningRef.current = true;
+      lastScannedFictionIdRef.current = fictionId;
       setScanning(true);
       setProgress({ current: 0, total: 0, chapter: "Starting...", phase: "download" });
       setResults([]);
+      const response = await startFullScan(fictionId);
+      if (!response?.started) {
+        setScanning(false);
+        sawScanningRef.current = false;
+        throw new Error(response?.reason || "Failed to start scan");
+      }
+      logger7.info("Scan started", { fictionId });
+      await new Promise((r3) => setTimeout(r3, 100));
+      await new Promise((resolve, reject) => {
+        let sawScanning = false;
+        const deadline = Date.now() + 1e4;
+        const tick = async () => {
+          try {
+            const state = await getScanState();
+            if (state.status === "scanning") {
+              sawScanning = true;
+              setProgress({
+                current: state.current || 0,
+                total: state.total || 0,
+                chapter: state.currentTitle || "",
+                phase: state.phase || "download",
+                shoutoutsFound: state.shoutoutsFound || 0
+              });
+            } else if (state.status === "error") {
+              reject(new Error(state.error || "Scan failed"));
+              return;
+            } else if (state.status === "complete" || state.status === "idle") {
+              if (sawScanning) {
+                resolve(state);
+                return;
+              }
+              if (Date.now() > deadline) {
+                reject(new Error("Scan never transitioned to running"));
+                return;
+              }
+            }
+            setTimeout(tick, 500);
+          } catch (err) {
+            reject(err);
+          }
+        };
+        tick();
+      });
+    }, []);
+    const handleScan = q2(async () => {
+      if (!selectedFictionId)
+        return;
       setSummary(null);
       try {
-        const response = await startFullScan(selectedFictionId);
-        if (response.started) {
-          logger7.info("Scan started");
-          startPolling();
-        } else {
-          logger7.warn("Scan not started", response.reason);
-          setSummary({ error: response.reason || "Failed to start scan" });
+        if (selectedFictionId === "__all__") {
+          inBatchRef.current = true;
+          let totalScanned = 0;
+          let totalFound = 0;
+          try {
+            for (let i5 = 0; i5 < myFictions.length; i5++) {
+              const f5 = myFictions[i5];
+              setBatchLabel(`Fiction ${i5 + 1} of ${myFictions.length}: ${f5.title || f5.fictionId}`);
+              setProgress({ current: 0, total: 0, chapter: `Starting "${f5.title || f5.fictionId}"...`, phase: "download" });
+              await runScan(String(f5.fictionId));
+              const final = await getScanState();
+              totalScanned += final.total || 0;
+              totalFound += final.shoutoutsFound || 0;
+            }
+          } finally {
+            inBatchRef.current = false;
+          }
+          setBatchLabel(null);
           setScanning(false);
+          setProgress(null);
+          setSummary({ scanned: totalScanned, found: totalFound, fictionTitle: "all fictions" });
+          stopPolling();
+          if (onScanComplete)
+            onScanComplete();
+          if (checkSwapsAfterRef.current && totalFound > 0) {
+            setCheckingSwaps(true);
+            checkAllSwaps().finally(() => setCheckingSwaps(false));
+          }
+          return;
         }
+        await runScan(selectedFictionId);
+        startPolling();
       } catch (err) {
-        logger7.error("Failed to start scan", err);
+        logger7.error("Scan failed", err);
         setSummary({ error: err.message });
         setScanning(false);
+        sawScanningRef.current = false;
       }
-    }, [selectedFictionId, startPolling]);
+    }, [selectedFictionId, myFictions, runScan, startPolling, stopPolling, onScanComplete]);
     const handleCancel = q2(async () => {
       try {
         await cancelScan();
@@ -35686,16 +35805,32 @@
         className: "rr-modal-large",
         footer,
         children: /* @__PURE__ */ u4("div", { class: "rr-scanner-content", children: [
+          /* @__PURE__ */ u4("div", { class: `rr-scanner-phase rr-scanner-phase--${phase}`, children: [
+            /* @__PURE__ */ u4("span", { class: "rr-scanner-phase-dot", "aria-hidden": true }),
+            /* @__PURE__ */ u4("span", { class: "rr-scanner-phase-label", children: [
+              phase === "idle" && "Ready",
+              phase === "scanning" && (batchLabel || "Scanning"),
+              phase === "swap-check" && "Checking for swap returns",
+              phase === "complete" && "Complete",
+              phase === "error" && "Error"
+            ] })
+          ] }),
           /* @__PURE__ */ u4("div", { class: "rr-scanner-fiction-select", children: [
             /* @__PURE__ */ u4("label", { class: "rr-modal-label", children: "Select fiction to scan:" }),
             /* @__PURE__ */ u4(
               Select,
               {
+                size: "sm",
                 value: selectedFictionId,
                 onChange: (e4) => setSelectedFictionId(e4.target.value),
                 disabled: scanning,
                 children: [
                   /* @__PURE__ */ u4("option", { value: "", children: "Select a fiction..." }),
+                  myFictions.length > 1 && /* @__PURE__ */ u4("option", { value: "__all__", children: [
+                    "All fictions (",
+                    myFictions.length,
+                    ")"
+                  ] }),
                   myFictions.map((f5) => /* @__PURE__ */ u4("option", { value: f5.fictionId, children: f5.title || `Fiction ${f5.fictionId}` }, f5.fictionId))
                 ]
               }
@@ -35713,6 +35848,7 @@
             }
           ),
           progress && /* @__PURE__ */ u4("div", { class: "rr-scanner-progress", children: [
+            batchLabel && /* @__PURE__ */ u4("div", { class: "rr-scanner-batch-label", children: batchLabel }),
             /* @__PURE__ */ u4("div", { class: "rr-scanner-progress-bar", children: /* @__PURE__ */ u4(
               "div",
               {
@@ -36143,30 +36279,33 @@
         }
       };
     }, [pollImportState]);
-    y2(() => {
-      const pollSwapChecks = async () => {
-        try {
-          const state = await getSwapCheckState();
-          const checks = state.checks || {};
-          const activeChecks = Object.entries(checks).filter(
-            ([_3, s4]) => s4.status === "checking"
-          );
-          if (activeChecks.length > 0) {
-            setSwapCheckStates(checks);
-            if (!swapCheckPollRef.current) {
-              swapCheckPollRef.current = setInterval(pollSwapChecks, 500);
-            }
-          } else {
-            setSwapCheckStates(checks);
-            if (swapCheckPollRef.current) {
-              clearInterval(swapCheckPollRef.current);
-              swapCheckPollRef.current = null;
-            }
+    const pollSwapChecksRef = A2(async () => {
+    });
+    pollSwapChecksRef.current = async () => {
+      try {
+        const state = await getSwapCheckState();
+        const checks = state.checks || {};
+        const activeChecks = Object.entries(checks).filter(
+          ([_3, s4]) => s4.status === "checking"
+        );
+        if (activeChecks.length > 0) {
+          setSwapCheckStates(checks);
+          if (!swapCheckPollRef.current) {
+            swapCheckPollRef.current = setInterval(() => pollSwapChecksRef.current(), 500);
           }
-        } catch (err) {
-          logger8.error("Failed to poll swap check states", err);
+        } else {
+          setSwapCheckStates(checks);
+          if (swapCheckPollRef.current) {
+            clearInterval(swapCheckPollRef.current);
+            swapCheckPollRef.current = null;
+          }
         }
-      };
+      } catch (err) {
+        logger8.error("Failed to poll swap check states", err);
+      }
+    };
+    y2(() => {
+      const pollSwapChecks = () => pollSwapChecksRef.current();
       pollSwapChecks();
       const handleMessage = (message) => {
         if (message.type === "swapCheckProgress") {
@@ -36264,12 +36403,14 @@
     };
     const handleCheckAllSwaps = async () => {
       setCheckingAllSwaps(true);
+      pollSwapChecksRef.current();
       try {
         const result = await checkAllSwaps();
         logger8.info("Check all swaps result", result);
         if (result.error) {
           alert(`Error: ${result.error}`);
         }
+        pollSwapChecksRef.current();
       } catch (err) {
         logger8.error("Failed to check all swaps", err);
         alert(`Error: ${err.message}`);
@@ -36279,20 +36420,26 @@
     };
     const daysInMonth = getDaysInMonth(month, year);
     const firstDay = getFirstDayOfMonth(month, year);
+    const lastCalSigRef = A2("");
     if (currentView === "calendar") {
       const visibleDateStrs = Array.from({ length: daysInMonth }, (_3, i5) => {
         const d4 = i5 + 1;
         return `${year}-${String(month + 1).padStart(2, "0")}-${String(d4).padStart(2, "0")}`;
       });
       const hits = visibleDateStrs.map((ds) => ({ date: ds, count: (shoutoutsByDate.get(ds) || []).length })).filter((h4) => h4.count > 0);
-      logger8.info("Calendar view render", {
-        viewing: `${MONTHS[month]} ${year}`,
-        viewedMonthKey: `${year}-${String(month + 1).padStart(2, "0")}`,
-        mapSize: shoutoutsByDate.size,
-        mapKeysSample: Array.from(shoutoutsByDate.keys()).slice(0, 20),
-        hitsInVisibleMonth: hits,
-        totalHitsInVisibleMonth: hits.reduce((n3, h4) => n3 + h4.count, 0)
-      });
+      const totalHits = hits.reduce((n3, h4) => n3 + h4.count, 0);
+      const sig = `${year}-${month}|${shoutoutsByDate.size}|${totalHits}`;
+      if (sig !== lastCalSigRef.current) {
+        logger8.info("Calendar view render", {
+          viewing: `${MONTHS[month]} ${year}`,
+          viewedMonthKey: `${year}-${String(month + 1).padStart(2, "0")}`,
+          mapSize: shoutoutsByDate.size,
+          mapKeysSample: Array.from(shoutoutsByDate.keys()).slice(0, 20),
+          hitsInVisibleMonth: hits,
+          totalHitsInVisibleMonth: totalHits
+        });
+        lastCalSigRef.current = sig;
+      }
     }
     return /* @__PURE__ */ u4("div", { class: "rr-calendar", children: [
       /* @__PURE__ */ u4("div", { class: "rr-calendar-header", children: [
@@ -38772,9 +38919,17 @@
       }).catch((err) => {
         logger16.warn("Could not sync myFictions", err);
       });
-      const handleMessage = (message) => {
+      const handleMessage = async (message) => {
         if (message.type === "swapCheckComplete") {
           logger16.info("Swap check complete, reloading data");
+          loadData();
+        } else if (message.type === "scanComplete") {
+          logger16.info("Scan complete, re-running auto-archive + reloading data");
+          try {
+            await autoArchiveToday();
+          } catch (err) {
+            logger16.warn("Post-scan auto-archive failed", err);
+          }
           loadData();
         }
       };
@@ -39411,8 +39566,29 @@
   }
   function extractFictionIdFromPath() {
     const path = window.location.pathname;
-    const match = path.match(/\/author-dashboard\/chapters\/(?:new|edit|editdraft)\/(\d+)/);
-    return match ? match[1] : null;
+    const newMatch = path.match(/\/author-dashboard\/chapters\/new\/(\d+)/);
+    if (newMatch)
+      return newMatch[1];
+    if (/\/author-dashboard\/chapters\/(?:edit|editdraft)\//.test(path)) {
+      return extractFictionIdFromPage();
+    }
+    return null;
+  }
+  function extractFictionIdFromPage() {
+    const nameVariants = ["FictionId", "fictionId", "fiction_id"];
+    for (const name of nameVariants) {
+      const input = document.querySelector(`input[name="${name}"]`);
+      if (input?.value)
+        return String(input.value);
+    }
+    const link = document.querySelector('a[href*="/fiction/"]');
+    const linkMatch = link?.getAttribute("href")?.match(/\/fiction\/(\d+)/);
+    if (linkMatch)
+      return linkMatch[1];
+    const dataEl = document.querySelector("[data-fiction-id]");
+    if (dataEl)
+      return dataEl.getAttribute("data-fiction-id");
+    return null;
   }
   function TodayBanner() {
     const [minimized, setMinimized] = d3(() => getSetting("bannerMinimized") || false);
@@ -39499,59 +39675,163 @@
       const rxContainer = parentDiv?.querySelector(".rx-container");
       const rxEditor = rxContainer?.querySelector('.rx-editor[contenteditable="true"]');
       const rxSource = rxContainer?.querySelector("textarea.rx-source");
-      return { formField, rxContainer, rxEditor, rxSource };
+      const tinyIframe = document.getElementById(`${fieldId}_ifr`);
+      const tinyDoc = tinyIframe?.contentDocument || tinyIframe?.contentWindow?.document || null;
+      const tinyBody = tinyDoc?.body || null;
+      return { formField, rxContainer, rxEditor, rxSource, tinyIframe, tinyBody };
     };
     const codeExistsIn = (elements, code) => {
       if (!elements || !code)
         return false;
-      const html = elements.rxEditor?.innerHTML || "";
+      const rxHtml = elements.rxEditor?.innerHTML || "";
+      const tinyHtml = stripMceAttrs(elements.tinyBody?.innerHTML || "");
       const value = elements.formField?.value || "";
-      return html.includes(code) || value.includes(code);
+      if (rxHtml.includes(code) || tinyHtml.includes(code) || value.includes(code)) {
+        return true;
+      }
+      const { hrefs, srcs } = extractCodeSignatures(code);
+      const probeRoot = elements.tinyBody || elements.rxEditor;
+      if (probeRoot) {
+        for (const href of hrefs) {
+          try {
+            if (probeRoot.querySelector(`a[href="${CSS.escape(href)}"]`))
+              return true;
+          } catch {
+          }
+        }
+        for (const src of srcs) {
+          try {
+            if (probeRoot.querySelector(`img[src="${CSS.escape(src)}"]`))
+              return true;
+          } catch {
+          }
+        }
+      }
+      return false;
     };
+    const collapseHtmlBlanks = (html) => {
+      return html.replace(/<br\s*\/?>\s*<br\s*\/?>\s*$/i, "").replace(/^\s*<br\s*\/?>\s*<br\s*\/?>/i, "").replace(/<br\s*\/?>\s*<br\s*\/?>\s*<br\s*\/?>\s*<br\s*\/?>/gi, "<br><br>").replace(/(<p[^>]*>)\s*(<\/p>)/gi, "$1$2").replace(/(<p[^>]*><\/p>\s*){3,}/gi, "<p></p><p></p>");
+    };
+    const stripMceAttrs = (html) => (html || "").replace(/\s?data-mce-[a-z0-9-]+="[^"]*"/g, "").replace(/\s?data-mce-[a-z0-9-]+='[^']*'/g, "").replace(/\s?data-mce-[a-z0-9-]+(?=[>\s])/g, "");
+    const extractCodeSignatures = (code) => {
+      const hrefs = /* @__PURE__ */ new Set();
+      const srcs = /* @__PURE__ */ new Set();
+      try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(code, "text/html");
+        doc.querySelectorAll("a[href]").forEach((a4) => hrefs.add(a4.getAttribute("href")));
+        doc.querySelectorAll("img[src]").forEach((img) => srcs.add(img.getAttribute("src")));
+      } catch {
+      }
+      return { hrefs, srcs };
+    };
+    const removeCodeFromDom = (rootEl, code) => {
+      if (!rootEl || !code)
+        return false;
+      const { hrefs, srcs } = extractCodeSignatures(code);
+      if (hrefs.size === 0 && srcs.size === 0)
+        return false;
+      const hits = /* @__PURE__ */ new Set();
+      hrefs.forEach((href) => {
+        try {
+          rootEl.querySelectorAll(`a[href="${CSS.escape(href)}"]`).forEach((el) => hits.add(el));
+        } catch {
+        }
+      });
+      srcs.forEach((src) => {
+        try {
+          rootEl.querySelectorAll(`img[src="${CSS.escape(src)}"]`).forEach((img) => {
+            hits.add(img);
+            const wrap = img.closest("a");
+            if (wrap)
+              hits.add(wrap);
+          });
+        } catch {
+        }
+      });
+      if (hits.size === 0)
+        return false;
+      const blocks = /* @__PURE__ */ new Set();
+      hits.forEach((el) => {
+        const block = el.closest("p, div, li, blockquote, figure") || el;
+        blocks.add(block);
+      });
+      blocks.forEach((block) => {
+        const clone = block.cloneNode(true);
+        hits.forEach((el) => {
+          clone.querySelectorAll("*").forEach((n3) => {
+            if (n3.outerHTML === el.outerHTML)
+              n3.remove();
+          });
+        });
+        const remainingText = clone.textContent?.trim() || "";
+        const remainingMedia = clone.querySelector("img, iframe");
+        if (remainingText || remainingMedia) {
+          hits.forEach((el) => {
+            if (block.contains(el))
+              el.remove();
+          });
+        } else {
+          block.remove();
+        }
+      });
+      return true;
+    };
+    const collapseTextBlanks = (value) => value.replace(/\n\n\s*$/g, "").replace(/^\s*\n\n/g, "").replace(/\n\n\n\n/g, "\n\n");
     const removeCodeFrom = (elements, code) => {
       if (!elements)
         return;
-      const { formField, rxEditor, rxSource } = elements;
+      const { formField, rxEditor, rxSource, tinyBody } = elements;
       if (rxEditor) {
-        let html = rxEditor.innerHTML || "";
-        html = html.replace(code, "");
-        html = html.replace(/<br\s*\/?>\s*<br\s*\/?>\s*$/i, "");
-        html = html.replace(/^\s*<br\s*\/?>\s*<br\s*\/?>/i, "");
-        html = html.replace(/<br\s*\/?>\s*<br\s*\/?>\s*<br\s*\/?>\s*<br\s*\/?>/gi, "<br><br>");
-        rxEditor.innerHTML = html.trim() || '<p data-rx-type="text" contenteditable="true" data-rx-first-level="true"></p>';
-        if (!html.trim()) {
+        const original = rxEditor.innerHTML || "";
+        if (original.includes(code)) {
+          rxEditor.innerHTML = collapseHtmlBlanks(original.replace(code, ""));
+        } else if (!removeCodeFromDom(rxEditor, code)) {
+          rxEditor.innerHTML = collapseHtmlBlanks(original);
+        }
+        const html = (rxEditor.innerHTML || "").trim();
+        if (!html) {
+          rxEditor.innerHTML = '<p data-rx-type="text" contenteditable="true" data-rx-first-level="true"></p>';
           rxEditor.classList.add("rx-empty", "rx-placeholder");
         }
       }
+      if (tinyBody) {
+        const original = tinyBody.innerHTML || "";
+        const normalized = stripMceAttrs(original);
+        if (normalized.includes(code)) {
+          tinyBody.innerHTML = collapseHtmlBlanks(normalized.replace(code, ""));
+        } else if (!removeCodeFromDom(tinyBody, code)) {
+          tinyBody.innerHTML = collapseHtmlBlanks(original.replace(code, ""));
+        }
+        const html = (tinyBody.innerHTML || "").trim();
+        if (!html) {
+          tinyBody.innerHTML = '<p><br data-mce-bogus="1"></p>';
+        }
+      }
       if (formField) {
-        let value = formField.value || "";
-        value = value.replace(code, "");
-        value = value.replace(/\n\n\s*$/g, "");
-        value = value.replace(/^\s*\n\n/g, "");
-        value = value.replace(/\n\n\n\n/g, "\n\n");
-        formField.value = value.trim();
+        formField.value = collapseTextBlanks((formField.value || "").replace(code, "")).trim();
       }
       if (rxSource) {
-        let value = rxSource.value || "";
-        value = value.replace(code, "");
-        value = value.replace(/\n\n\s*$/g, "");
-        value = value.replace(/^\s*\n\n/g, "");
-        value = value.replace(/\n\n\n\n/g, "\n\n");
-        rxSource.value = value.trim();
+        rxSource.value = collapseTextBlanks((rxSource.value || "").replace(code, "")).trim();
       }
       rxEditor?.dispatchEvent(new Event("input", { bubbles: true }));
+      tinyBody?.dispatchEvent(new Event("input", { bubbles: true }));
       formField?.dispatchEvent(new Event("input", { bubbles: true }));
       rxSource?.dispatchEvent(new Event("input", { bubbles: true }));
     };
     const addCodeTo = (elements, code) => {
       if (!elements)
         return;
-      const { formField, rxEditor, rxSource } = elements;
+      const { formField, rxEditor, rxSource, tinyBody } = elements;
+      const isHtmlEmpty = (html) => !html?.trim() || html === "<p><br></p>" || html === "<p></p>" || /^<p[^>]*><\/p>$/.test(html) || /^<p[^>]*><br[^>]*><\/p>$/i.test(html);
       if (rxEditor) {
         const currentHtml = rxEditor.innerHTML || "";
-        const isEmpty = !currentHtml.trim() || currentHtml === "<p><br></p>" || currentHtml === "<p></p>" || /^<p[^>]*><\/p>$/.test(currentHtml);
-        rxEditor.innerHTML = isEmpty ? code : currentHtml + "<br><br>" + code;
+        rxEditor.innerHTML = isHtmlEmpty(currentHtml) ? code : currentHtml + "<br><br>" + code;
         rxEditor.classList.remove("rx-empty", "rx-placeholder");
+      }
+      if (tinyBody) {
+        const currentHtml = tinyBody.innerHTML || "";
+        tinyBody.innerHTML = isHtmlEmpty(currentHtml) ? code : currentHtml + "<br><br>" + code;
       }
       if (formField) {
         const currentValue = formField.value || "";
@@ -39562,6 +39842,7 @@
         rxSource.value = !currentSource.trim() ? code : currentSource + "\n\n" + code;
       }
       rxEditor?.dispatchEvent(new Event("input", { bubbles: true }));
+      tinyBody?.dispatchEvent(new Event("input", { bubbles: true }));
       formField?.dispatchEvent(new Event("input", { bubbles: true }));
       rxSource?.dispatchEvent(new Event("input", { bubbles: true }));
     };
@@ -39583,7 +39864,8 @@
         const otherField = placement === "pre" ? "PostAuthorNotes" : "PreAuthorNotes";
         const targetElements = getEditorElements(targetField);
         const otherElements = getEditorElements(otherField);
-        if (!targetElements?.rxEditor) {
+        const hasTarget = targetElements?.rxEditor || targetElements?.tinyBody || targetElements?.formField;
+        if (!hasTarget) {
           logger17.warn("Could not find target editor", { targetField });
           return;
         }
@@ -41788,6 +42070,9 @@
   // src/shout_out_swapper/ui/modal/ShoutoutModal.css
   var ShoutoutModal_default = "/* Shoutout Modal Styles - matches v1 */\n\n/* Override base modal for shoutout xlarge */\n.rr-modal.rr-modal-xlarge {\n  width: auto;\n  min-width: 400px;\n  max-width: min(95vw, 850px);\n  max-height: 90vh;\n}\n\n.rr-modal.rr-modal-xlarge .rr-modal-body {\n  overflow: auto;\n}\n\n/* Modal date header */\n.rr-modal-date {\n  font-weight: 500;\n  margin-bottom: 1rem;\n  font-size: 1.1rem;\n}\n\n/* Edit mode layout - Code LEFT, Author RIGHT */\n.rr-modal-edit-layout {\n  display: flex;\n  gap: 1.5rem;\n  flex-wrap: wrap;\n}\n\n.rr-modal-edit-code {\n  flex: 1 1 300px;\n  display: flex;\n  flex-direction: column;\n  min-width: 0;\n  max-width: 100%;\n}\n\n/* Fixed height for textarea, auto for preview */\n.rr-textarea-wrapper {\n  height: 150px;\n  min-height: 150px;\n  max-height: 150px;\n}\n\n.rr-modal-preview-container {\n  margin-top: 0.5rem;\n  margin-bottom: 1rem;\n  padding: 1rem;\n  border: 1px solid rgba(128, 128, 128, 0.2);\n  border-radius: 8px;\n  max-height: 300px;\n  overflow-y: auto;\n}\n\n.rr-modal-code-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  margin-bottom: 0.5rem;\n}\n\n.rr-modal-code-header .rr-modal-label {\n  margin-bottom: 0;\n}\n\n.rr-modal-code-buttons {\n  display: flex;\n  gap: 0.5rem;\n}\n\n/* Toggle button badges */\n.rr-modal-code-toggles {\n  display: flex;\n  gap: 0.25rem;\n}\n\n.rr-toggle-btn {\n  width: 28px;\n  height: 28px;\n  padding: 0;\n  border: 1px solid rgba(128, 128, 128, 0.3);\n  border-radius: 4px;\n  background: transparent;\n  color: rgba(128, 128, 128, 0.6);\n  cursor: pointer;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 0.85rem;\n  transition: all 0.15s;\n}\n\n.rr-toggle-btn:hover {\n  background: rgba(128, 128, 128, 0.1);\n  color: inherit;\n}\n\n.rr-toggle-btn.active {\n  background: #337ab7;\n  border-color: #337ab7;\n  color: #fff;\n}\n\n/* Textarea with line numbers - matches v1 */\n.rr-textarea-wrapper {\n  display: flex;\n  border: 1px solid rgba(128, 128, 128, 0.3);\n  border-radius: 4px;\n  overflow: hidden;\n}\n\n.rr-line-numbers {\n  background: rgba(128, 128, 128, 0.1);\n  padding: 0.5rem;\n  font-family: monospace;\n  font-size: 0.85rem;\n  line-height: 1.5;\n  color: rgba(128, 128, 128, 0.7);\n  text-align: right;\n  user-select: none;\n  min-width: 40px;\n  min-height: 150px;\n  max-height: 150px;\n  overflow: hidden;\n}\n\n.rr-line-numbers div {\n  height: 1.5em;\n}\n\n.rr-modal-textarea {\n  min-height: 150px;\n  max-height: 150px;\n  flex: 1;\n  resize: none;\n  font-family: monospace;\n  font-size: 0.85rem;\n  line-height: 1.5;\n  border: none;\n  border-radius: 0;\n  padding: 0.5rem;\n  background: transparent;\n}\n\n.rr-modal-textarea:focus {\n  outline: none;\n  box-shadow: none;\n}\n\n/* Preview content */\n.rr-modal-preview {\n  min-height: 100px;\n}\n\n/* Author panel */\n.rr-modal-author-panel {\n  flex: 0 1 auto;\n  width: clamp(180px, 35%, 280px);\n  min-width: 180px;\n  border: 1px solid rgba(128, 128, 128, 0.2);\n  border-radius: 8px;\n  min-height: 150px;\n  display: flex;\n  flex-direction: column;\n  overflow: hidden;\n}\n\n.rr-author-empty {\n  flex: 1;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  color: rgba(128, 128, 128, 0.5);\n  text-align: center;\n  padding: 1rem;\n}\n\n.rr-author-card {\n  padding: 1rem;\n}\n\n.rr-author-cover {\n  width: 100%;\n  max-width: 150px;\n  height: auto;\n  border-radius: 4px;\n  margin-bottom: 0.75rem;\n}\n\n.rr-author-info {\n  display: flex;\n  flex-direction: column;\n  gap: 0.25rem;\n}\n\n.rr-author-fiction {\n  font-weight: 600;\n  font-size: 0.95rem;\n}\n\n.rr-author-name {\n  font-size: 0.85rem;\n  color: rgba(128, 128, 128, 0.7);\n}\n\n.rr-author-name a {\n  color: inherit;\n  text-decoration: underline;\n}\n\n.rr-author-name a:hover {\n  color: #fff;\n}\n\n/* Large author card for modal */\n.rr-author-card-large {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  text-align: center;\n  padding: clamp(0.75rem, 3vw, 1.5rem);\n  gap: 0.5rem;\n}\n\n.rr-author-cover-large {\n  width: clamp(80px, 50%, 120px);\n  height: auto;\n  aspect-ratio: 120 / 170;\n  object-fit: cover;\n  border-radius: 6px;\n  margin-bottom: 0.5rem;\n}\n\n.rr-author-fiction-large {\n  font-weight: 600;\n  font-size: clamp(0.9rem, 2.5vw, 1.1rem);\n  word-break: break-word;\n}\n\n.rr-view-fiction-btn {\n  margin-top: 0.75rem;\n}\n\n/* Scheduled for section in author panel */\n.rr-scheduled-for-section {\n  margin-top: 1rem;\n  padding-top: 1rem;\n  border-top: 1px solid rgba(128, 128, 128, 0.2);\n  text-align: left;\n  width: 100%;\n}\n\n.rr-scheduled-for-label {\n  font-size: 0.75rem;\n  font-weight: 600;\n  text-transform: uppercase;\n  color: rgba(128, 128, 128, 0.7);\n  margin-bottom: 0.5rem;\n}\n\n.rr-scheduled-for-list {\n  display: flex;\n  flex-direction: column;\n  gap: 0.35rem;\n}\n\n.rr-scheduled-for-item {\n  display: flex;\n  align-items: center;\n  flex-wrap: wrap;\n  gap: 0.25rem 0.5rem;\n  padding: 0.35rem 0.5rem;\n  background: rgba(51, 122, 183, 0.1);\n  border-radius: 4px;\n  font-size: clamp(0.7rem, 2vw, 0.8rem);\n}\n\n.rr-scheduled-for-item.rr-archived {\n  background: rgba(40, 167, 69, 0.1);\n}\n\n.rr-scheduled-fiction-title {\n  font-weight: 500;\n  flex: 1 1 100%;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.rr-scheduled-date {\n  color: rgba(128, 128, 128, 0.7);\n  font-size: 0.75rem;\n  flex-shrink: 0;\n}\n\n.rr-scheduled-date.rr-unscheduled {\n  color: #ffc107;\n  font-style: italic;\n}\n\n.rr-archived-icon {\n  color: #28a745;\n  flex-shrink: 0;\n}\n\n/* Expected date row */\n.rr-expected-date-row {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n}\n\n.rr-expected-date-row .rr-modal-label {\n  margin-bottom: 0;\n  white-space: nowrap;\n}\n\n/* Schedules section */\n.rr-schedules-section {\n  margin-top: 1rem;\n}\n\n.rr-schedules-list {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 0.5rem;\n  margin-top: 0.5rem;\n  align-items: center;\n}\n\n.rr-schedule-tag {\n  display: inline-flex;\n  align-items: center;\n  gap: 0.5rem;\n  padding: 0.35rem 0.5rem 0.35rem 0.75rem;\n  background: rgba(128, 128, 128, 0.1);\n  border: 1px solid rgba(128, 128, 128, 0.15);\n  border-radius: 4px;\n  font-size: 0.85rem;\n}\n\n.rr-schedule-fiction {\n  font-weight: 500;\n}\n\n.rr-schedule-date {\n  color: rgba(128, 128, 128, 0.7);\n}\n\n.rr-schedule-date-input {\n  background: rgba(128, 128, 128, 0.1);\n  border: 1px solid rgba(128, 128, 128, 0.2);\n  border-radius: 3px;\n  color: inherit;\n  font-size: 0.8rem;\n  padding: 0.15rem 0.35rem;\n  cursor: pointer;\n}\n\n.rr-schedule-date-input:hover {\n  border-color: rgba(128, 128, 128, 0.4);\n}\n\n.rr-schedule-date-input:focus {\n  outline: none;\n  border-color: #337ab7;\n}\n\n.rr-schedule-tag.rr-schedule-archived {\n  background: rgba(40, 167, 69, 0.1);\n  border-color: rgba(40, 167, 69, 0.2);\n}\n\n.rr-schedule-archived-icon {\n  color: #28a745;\n  font-size: 0.75rem;\n}\n\n.rr-schedule-remove {\n  background: transparent;\n  border: none;\n  color: rgba(128, 128, 128, 0.5);\n  cursor: pointer;\n  padding: 0 0.25rem;\n  font-size: 1.1rem;\n  line-height: 1;\n}\n\n.rr-schedule-remove:hover {\n  color: #dc3545;\n}\n\n.rr-schedule-add {\n  display: flex;\n  gap: 0.5rem;\n  margin-top: 0.5rem;\n  align-items: center;\n}\n\n.rr-schedule-show-add-btn {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 28px;\n  height: 28px;\n  background: transparent;\n  border: 1px dashed rgba(128, 128, 128, 0.3);\n  border-radius: 4px;\n  color: rgba(128, 128, 128, 0.5);\n  cursor: pointer;\n  font-size: 1.2rem;\n  transition: all 0.15s;\n}\n\n.rr-schedule-show-add-btn:hover {\n  border-color: rgba(128, 128, 128, 0.5);\n  color: inherit;\n}\n\n.rr-no-schedules {\n  color: rgba(128, 128, 128, 0.5);\n  font-size: 0.85rem;\n  font-style: italic;\n}\n\n/* My Code fields */\n.rr-mycode-fields {\n  margin-top: 1rem;\n  display: flex;\n  flex-direction: column;\n  gap: 0.75rem;\n}\n\n.rr-mycode-name-field {\n  opacity: 0.7;\n}\n\n.rr-optional-label {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n}\n\n.rr-optional-hint {\n  font-weight: 400;\n  font-size: 0.7rem;\n  opacity: 0.6;\n}\n\n/* Button alignment helper */\n.me-auto {\n  margin-right: auto;\n}\n\n/* View Mode Styles */\n.rr-shoutout-view {\n  display: flex;\n  flex-direction: column;\n  gap: 1.5rem;\n}\n\n.rr-view-header {\n  display: flex;\n  gap: 1rem;\n}\n\n.rr-view-cover {\n  width: 100px;\n  height: 140px;\n  flex-shrink: 0;\n  border-radius: 4px;\n  overflow: hidden;\n  background: rgba(128, 128, 128, 0.1);\n}\n\n.rr-view-cover img {\n  width: 100%;\n  height: 100%;\n  object-fit: cover;\n}\n\n.rr-view-cover-placeholder {\n  width: 100%;\n  height: 100%;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 2rem;\n  color: rgba(128, 128, 128, 0.3);\n}\n\n.rr-view-info {\n  display: flex;\n  flex-direction: column;\n  gap: 0.25rem;\n}\n\n.rr-view-title {\n  font-weight: 600;\n  font-size: 1.2rem;\n}\n\n.rr-view-author {\n  color: rgba(128, 128, 128, 0.7);\n}\n\n.rr-view-link {\n  margin-top: 0.5rem;\n  color: #337ab7;\n  text-decoration: none;\n}\n\n.rr-view-link:hover {\n  text-decoration: underline;\n}\n\n.rr-view-details {\n  display: flex;\n  flex-direction: column;\n  gap: 0.75rem;\n}\n\n.rr-view-row {\n  display: flex;\n  align-items: center;\n  gap: 0.75rem;\n}\n\n.rr-view-row .rr-label {\n  font-weight: 500;\n  min-width: 120px;\n  color: rgba(128, 128, 128, 0.7);\n}\n\n.rr-view-code {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n}\n\n.rr-view-code .rr-label {\n  font-weight: 500;\n  color: rgba(128, 128, 128, 0.7);\n}\n\n.rr-code-preview {\n  padding: 1rem;\n  border: 1px solid rgba(128, 128, 128, 0.2);\n  border-radius: 8px;\n  max-height: 300px;\n  overflow-y: auto;\n}\n\n/* Go to Chapter button */\n.rr-goto-chapter-btn {\n  margin-top: 1rem;\n}\n\n.rr-goto-chapter-btn i {\n  margin-right: 0.25rem;\n}\n\n/* Swap Section in Author Panel */\n.rr-swap-section {\n  margin-top: 1rem;\n  padding-top: 1rem;\n  border-top: 1px solid rgba(128, 128, 128, 0.2);\n  text-align: center;\n}\n\n.rr-swap-badge {\n  display: inline-block;\n  padding: 0.25rem 0.5rem;\n  border-radius: 4px;\n  font-size: clamp(0.65rem, 2vw, 0.75rem);\n  font-weight: 600;\n  text-transform: uppercase;\n  letter-spacing: 0.5px;\n}\n\n/* We posted their shoutout (green) */\n.rr-swap-badge-swapped {\n  background: rgba(40, 167, 69, 0.2);\n  color: #28a745;\n  border: 1px solid #28a745;\n}\n\n/* Both posted - swap complete (cyan) */\n.rr-swap-badge-returned {\n  background: rgba(23, 162, 184, 0.2);\n  color: #17a2b8;\n  border: 1px solid #17a2b8;\n}\n\n/* We posted, scanned, they didn't return (red) */\n.rr-swap-badge-not-found {\n  background: rgba(220, 53, 69, 0.2);\n  color: #dc3545;\n  border: 1px solid #dc3545;\n}\n\n/* They shouted us first (cyan) */\n.rr-swap-badge-shouted {\n  background: rgba(23, 162, 184, 0.2);\n  color: #17a2b8;\n  border: 1px solid #17a2b8;\n}\n\n/* Scheduled but not posted yet (orange) */\n.rr-swap-badge-scheduled {\n  background: rgba(230, 126, 34, 0.2);\n  color: #e67e22;\n  border: 1px solid #e67e22;\n}\n\n.rr-swap-badge-clickable {\n  cursor: pointer;\n  transition: all 0.15s;\n}\n\n.rr-swap-badge-clickable:hover {\n  background: rgba(255, 193, 7, 0.4);\n  transform: scale(1.05);\n}\n\n.rr-swap-badge-checking {\n  background: rgba(23, 162, 184, 0.2);\n  color: #17a2b8;\n  border: 1px solid #17a2b8;\n}\n\n.rr-swap-badge-checking i {\n  margin-right: 0.25rem;\n}\n\n.rr-swap-checking {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 0.5rem;\n  width: 100%;\n  padding: 0 1rem;\n}\n\n.rr-swap-progress-bar {\n  width: 100%;\n  height: 6px;\n  background: rgba(128, 128, 128, 0.2);\n  border-radius: 3px;\n  overflow: hidden;\n}\n\n.rr-swap-progress-fill {\n  height: 100%;\n  background: #17a2b8;\n  border-radius: 3px;\n  transition: width 0.3s ease;\n}\n\n.rr-swap-progress-text {\n  font-size: 0.75rem;\n  color: rgba(128, 128, 128, 0.9);\n}\n\n.rr-swap-progress-chapter {\n  font-size: 0.7rem;\n  color: rgba(128, 128, 128, 0.6);\n  max-width: 100%;\n  text-align: center;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.rr-swap-last-scan {\n  font-size: 0.75rem;\n  color: rgba(128, 128, 128, 0.7);\n  margin-top: 0.5rem;\n}\n\n.rr-check-swap-btn {\n  margin-top: 0.5rem;\n}\n\n/* Swap Found Info */\n.rr-swap-found {\n  margin-top: 1rem;\n  padding: clamp(0.5rem, 2vw, 0.75rem);\n  background: rgba(40, 167, 69, 0.1);\n  border-radius: 6px;\n  border: 1px solid rgba(40, 167, 69, 0.3);\n  word-break: break-word;\n}\n\n.rr-swap-found-label {\n  font-size: clamp(0.75rem, 2vw, 0.85rem);\n  color: #28a745;\n}\n\n.rr-swap-found-label i {\n  margin-right: 0.25rem;\n}\n\n.rr-swap-view-link {\n  display: inline-flex;\n  align-items: center;\n  gap: 0.25rem;\n  margin-top: 0.5rem;\n  color: #337ab7;\n  text-decoration: none;\n  font-size: 0.85rem;\n}\n\n.rr-swap-view-link:hover {\n  text-decoration: underline;\n}\n\n/* Swap Result (error only now) */\n.rr-swap-result {\n  padding: 0.5rem 0.75rem;\n  border-radius: 4px;\n  font-size: 0.85rem;\n  margin-top: 0.5rem;\n}\n\n.rr-swap-result.rr-swap-not-found {\n  background: rgba(220, 53, 69, 0.1);\n  color: #dc3545;\n}\n\n.rr-swap-result i {\n  margin-right: 0.25rem;\n}\n\n/* Responsive */\n@media (max-width: 768px) {\n  .rr-modal.rr-modal-xlarge {\n    min-width: unset;\n    width: 95vw;\n  }\n  .rr-modal-edit-layout {\n    flex-direction: column;\n  }\n  .rr-modal-author-panel {\n    width: 100%;\n    max-width: 100%;\n  }\n  .rr-author-card-large {\n    flex-direction: row;\n    flex-wrap: wrap;\n    justify-content: center;\n    gap: 1rem;\n  }\n  .rr-author-cover-large {\n    width: 80px;\n    flex-shrink: 0;\n  }\n  .rr-scheduled-for-section {\n    width: 100%;\n  }\n  .rr-swap-section {\n    width: 100%;\n  }\n}\n\n@media (max-width: 600px) {\n  .rr-modal-preview-container {\n    max-height: 200px;\n  }\n  .rr-author-card-large {\n    flex-direction: column;\n  }\n}\n";
 
+  // src/shout_out_swapper/ui/scanner/ScannerModal.css
+  var ScannerModal_default = "/* Scanner Modal Styles */\n\n.rr-scanner-content {\n  display: flex;\n  flex-direction: column;\n  gap: 1rem;\n}\n\n.rr-scanner-fiction-select {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n}\n\n.rr-scanner-fiction-select select {\n  max-width: 400px;\n}\n\n.rr-scanner-description {\n  color: inherit;\n  opacity: 0.7;\n  font-size: 0.9rem;\n  margin: 0;\n}\n\n/* Progress */\n.rr-scanner-progress {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  padding: 1rem;\n  background: rgba(128, 128, 128, 0.1);\n  border-radius: 8px;\n}\n\n.rr-scanner-progress-bar {\n  height: 8px;\n  background: rgba(128, 128, 128, 0.2);\n  border-radius: 4px;\n  overflow: hidden;\n}\n\n.rr-scanner-progress-fill {\n  height: 100%;\n  background: #337ab7;\n  border-radius: 4px;\n  transition: width 0.3s ease;\n}\n\n.rr-scanner-progress-text {\n  font-size: 0.85rem;\n  opacity: 0.8;\n}\n\n.rr-scanner-found-count {\n  font-size: 0.85rem;\n  color: #28a745;\n  font-weight: 500;\n}\n\n/* Results */\n.rr-scanner-results {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  max-height: 200px;\n  overflow-y: auto;\n}\n\n.rr-scanner-results-header {\n  font-weight: 600;\n  font-size: 0.9rem;\n}\n\n.rr-scanner-results-list {\n  display: flex;\n  flex-direction: column;\n  gap: 0.25rem;\n}\n\n.rr-scanner-result-item {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  font-size: 0.85rem;\n  padding: 0.25rem 0;\n  border-bottom: 1px solid rgba(128, 128, 128, 0.1);\n}\n\n.rr-scanner-result-chapter {\n  font-weight: 500;\n  flex-shrink: 0;\n  max-width: 200px;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.rr-scanner-result-arrow {\n  opacity: 0.5;\n  flex-shrink: 0;\n}\n\n.rr-scanner-result-fiction {\n  color: #337ab7;\n  flex: 1;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.rr-scanner-result-author {\n  opacity: 0.6;\n  flex-shrink: 0;\n  font-size: 0.8rem;\n}\n\n/* Summary */\n.rr-scanner-summary {\n  padding: 1rem;\n  border-radius: 8px;\n  font-weight: 500;\n}\n\n.rr-scanner-summary-success {\n  background: rgba(40, 167, 69, 0.1);\n  color: #28a745;\n}\n\n.rr-scanner-summary-error {\n  background: rgba(220, 53, 69, 0.1);\n  color: #dc3545;\n}\n\n/* Checkbox */\n.rr-scanner-checkbox {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  cursor: pointer;\n  font-size: 0.9rem;\n}\n\n.rr-scanner-checkbox input {\n  cursor: pointer;\n}\n\n.rr-scanner-batch-label {\n  font-size: 0.8125rem;\n  font-weight: 500;\n  margin-bottom: 0.35rem;\n  opacity: 0.85;\n}\n\n.rr-scanner-phase {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  padding: 0.35rem 0.625rem;\n  margin-bottom: 0.75rem;\n  font-size: 0.75rem;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  border-radius: 999px;\n  background: rgba(0, 0, 0, 0.04);\n  width: fit-content;\n}\n.rr-scanner-phase-dot {\n  width: 7px;\n  height: 7px;\n  border-radius: 50%;\n  background: #999;\n  flex-shrink: 0;\n}\n.rr-scanner-phase--idle .rr-scanner-phase-dot { background: #9ca3af; }\n.rr-scanner-phase--scanning .rr-scanner-phase-dot {\n  background: #3b82f6;\n  animation: rr-scanner-pulse 1.2s ease-in-out infinite;\n}\n.rr-scanner-phase--swap-check .rr-scanner-phase-dot {\n  background: #a855f7;\n  animation: rr-scanner-pulse 1.2s ease-in-out infinite;\n}\n.rr-scanner-phase--complete .rr-scanner-phase-dot { background: #22c55e; }\n.rr-scanner-phase--error .rr-scanner-phase-dot { background: #ef4444; }\n@keyframes rr-scanner-pulse {\n  0%, 100% { opacity: 1; transform: scale(1); }\n  50% { opacity: 0.55; transform: scale(0.85); }\n}\n";
+
   // src/shout_out_swapper/ui/export/ExportImportModal.css
   var ExportImportModal_default = "/* Export/Import Modal styles */\n\n.rr-export-import-content {\n  padding: 0.5rem 0;\n}\n\n.rr-export-section,\n.rr-import-section {\n  margin-bottom: 1rem;\n}\n\n.rr-export-section h5,\n.rr-import-section h5 {\n  margin-bottom: 0.5rem;\n  font-weight: 600;\n}\n\n.rr-export-section p,\n.rr-import-section p {\n  margin-bottom: 0.75rem;\n  font-size: 0.85rem;\n}\n\n.rr-import-progress {\n  margin-top: 1rem;\n}\n\n.rr-import-progress .progress {\n  height: 8px;\n  border-radius: 4px;\n  background: rgba(128, 128, 128, 0.2);\n  overflow: hidden;\n  margin-bottom: 0.5rem;\n}\n\n.rr-import-progress .progress-bar {\n  height: 100%;\n  background: #337ab7;\n  transition: width 0.2s ease;\n}\n\n.rr-import-progress small {\n  display: block;\n}\n";
 
@@ -41821,6 +42106,7 @@
       Contacts_default,
       ContactModal_default,
       ShoutoutModal_default,
+      ScannerModal_default,
       ExportImportModal_default,
       SettingsModal_default,
       TodayBanner_default,

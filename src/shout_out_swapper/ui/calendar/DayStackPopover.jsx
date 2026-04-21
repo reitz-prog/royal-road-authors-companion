@@ -51,7 +51,14 @@ export function DayStackPopover({
     return () => document.removeEventListener('click', handleClick);
   }, [isOpen, onClose]);
 
-  logger.info('Popover render', { isOpen, shoutoutsCount: shoutouts.length, itemsCount: items.length });
+  // Only log when state actually changes — otherwise every parent re-render
+  // (every 500ms during a scan poll) would spam this line.
+  const lastSigRef = useRef('');
+  const sig = `${isOpen}|${shoutouts.length}|${items.length}`;
+  if (sig !== lastSigRef.current) {
+    logger.info('Popover render', { isOpen, shoutoutsCount: shoutouts.length, itemsCount: items.length });
+    lastSigRef.current = sig;
+  }
 
   if (!isOpen || shoutouts.length === 0) return null;
 

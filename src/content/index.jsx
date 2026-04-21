@@ -18,6 +18,7 @@ import dropMenuStyles from '../shout_out_swapper/ui/calendar/DropMenu.css';
 import contactsStyles from '../shout_out_swapper/ui/contacts/Contacts.css';
 import contactModalStyles from '../shout_out_swapper/ui/contacts/ContactModal.css';
 import shoutoutModalStyles from '../shout_out_swapper/ui/modal/ShoutoutModal.css';
+import scannerModalStyles from '../shout_out_swapper/ui/scanner/ScannerModal.css';
 import exportImportStyles from '../shout_out_swapper/ui/export/ExportImportModal.css';
 import settingsStyles from '../common/settings/ui/SettingsModal.css';
 import bannerStyles from '../shout_out_swapper/ui/banner/TodayBanner.css';
@@ -47,6 +48,7 @@ function injectStyles() {
     contactsStyles,
     contactModalStyles,
     shoutoutModalStyles,
+    scannerModalStyles,
     exportImportStyles,
     settingsStyles,
     bannerStyles,

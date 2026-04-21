@@ -457,37 +457,42 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
     };
   }, [pollImportState]);
 
+  // Swap-check poller — extracted so it can be kicked off from `handleCheckAllSwaps`
+  // the moment the user starts a check, rather than relying on chrome runtime
+  // messages (which can be dropped if the service worker naps). Stored on a ref
+  // so its identity is stable across renders.
+  const pollSwapChecksRef = useRef(async () => {});
+  pollSwapChecksRef.current = async () => {
+    try {
+      const state = await getSwapCheckState();
+      const checks = state.checks || {};
+
+      const activeChecks = Object.entries(checks).filter(
+        ([_, s]) => s.status === 'checking'
+      );
+
+      if (activeChecks.length > 0) {
+        setSwapCheckStates(checks);
+
+        if (!swapCheckPollRef.current) {
+          swapCheckPollRef.current = setInterval(() => pollSwapChecksRef.current(), 500);
+        }
+      } else {
+        // Update one last time to show completion, then stop polling.
+        setSwapCheckStates(checks);
+        if (swapCheckPollRef.current) {
+          clearInterval(swapCheckPollRef.current);
+          swapCheckPollRef.current = null;
+        }
+      }
+    } catch (err) {
+      logger.error('Failed to poll swap check states', err);
+    }
+  };
+
   // Poll for swap check states
   useEffect(() => {
-    const pollSwapChecks = async () => {
-      try {
-        const state = await getSwapCheckState();
-        const checks = state.checks || {};
-
-        // Only update if there are active checks
-        const activeChecks = Object.entries(checks).filter(
-          ([_, s]) => s.status === 'checking'
-        );
-
-        if (activeChecks.length > 0) {
-          setSwapCheckStates(checks);
-
-          // Start polling if not already
-          if (!swapCheckPollRef.current) {
-            swapCheckPollRef.current = setInterval(pollSwapChecks, 500);
-          }
-        } else {
-          // Update one last time to show completion, then stop polling
-          setSwapCheckStates(checks);
-          if (swapCheckPollRef.current) {
-            clearInterval(swapCheckPollRef.current);
-            swapCheckPollRef.current = null;
-          }
-        }
-      } catch (err) {
-        logger.error('Failed to poll swap check states', err);
-      }
-    };
+    const pollSwapChecks = () => pollSwapChecksRef.current();
 
     // Initial poll
     pollSwapChecks();
@@ -603,13 +608,18 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
 
   const handleCheckAllSwaps = async () => {
     setCheckingAllSwaps(true);
+    // Kick the poller off immediately so per-shoutout check status updates
+    // live instead of only on a manual refresh. The poller self-terminates
+    // once no check remains in the `checking` status.
+    pollSwapChecksRef.current();
     try {
       const result = await checkAllSwaps();
       logger.info('Check all swaps result', result);
       if (result.error) {
         alert(`Error: ${result.error}`);
       }
-      // Data will be reloaded via swapCheckComplete message listener
+      // Final sync once the background service worker marks everything done.
+      pollSwapChecksRef.current();
     } catch (err) {
       logger.error('Failed to check all swaps', err);
       alert(`Error: ${err.message}`);
@@ -621,9 +631,11 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
   const daysInMonth = getDaysInMonth(month, year);
   const firstDay = getFirstDayOfMonth(month, year);
 
-  // Diagnostic: log every time the calendar view re-renders, so we can see
-  // which month is shown, which date keys exist in the map, and how many
-  // shoutouts hit each visible day.
+  // Diagnostic: log when the calendar view's visible-state meaningfully
+  // changes (month, map size, or total hits). A ref-based signature check
+  // prevents log spam when the parent re-renders on polling ticks but
+  // nothing visible actually changed.
+  const lastCalSigRef = useRef('');
   if (currentView === 'calendar') {
     const visibleDateStrs = Array.from({ length: daysInMonth }, (_, i) => {
       const d = i + 1;
@@ -632,14 +644,19 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
     const hits = visibleDateStrs
       .map(ds => ({ date: ds, count: (shoutoutsByDate.get(ds) || []).length }))
       .filter(h => h.count > 0);
-    logger.info('Calendar view render', {
-      viewing: `${MONTHS[month]} ${year}`,
-      viewedMonthKey: `${year}-${String(month + 1).padStart(2, '0')}`,
-      mapSize: shoutoutsByDate.size,
-      mapKeysSample: Array.from(shoutoutsByDate.keys()).slice(0, 20),
-      hitsInVisibleMonth: hits,
-      totalHitsInVisibleMonth: hits.reduce((n, h) => n + h.count, 0),
-    });
+    const totalHits = hits.reduce((n, h) => n + h.count, 0);
+    const sig = `${year}-${month}|${shoutoutsByDate.size}|${totalHits}`;
+    if (sig !== lastCalSigRef.current) {
+      logger.info('Calendar view render', {
+        viewing: `${MONTHS[month]} ${year}`,
+        viewedMonthKey: `${year}-${String(month + 1).padStart(2, '0')}`,
+        mapSize: shoutoutsByDate.size,
+        mapKeysSample: Array.from(shoutoutsByDate.keys()).slice(0, 20),
+        hitsInVisibleMonth: hits,
+        totalHitsInVisibleMonth: totalHits,
+      });
+      lastCalSigRef.current = sig;
+    }
   }
 
   return (
