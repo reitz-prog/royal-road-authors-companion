@@ -21,6 +21,24 @@
   font-size: 0.85rem;
 }
 
+.rr-csv-target-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.rr-csv-target-label {
+  font-size: 0.8rem;
+  white-space: nowrap;
+  margin-bottom: 0;
+}
+
+.rr-csv-target-row select {
+  flex: 1;
+  min-width: 0;
+}
+
 .rr-template-section {
   margin-top: 0.25rem;
 }

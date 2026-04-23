@@ -35479,8 +35479,8 @@
     logger6.info("Template download complete", { filename });
     return filename;
   }
-  async function importFromExcel(file) {
-    logger6.info("Starting import (background)...", { name: file.name });
+  async function importFromExcel(file, { csvSheetName } = {}) {
+    logger6.info("Starting import (background)...", { name: file.name, csvSheetName });
     const isCsv = /\.csv$/i.test(file.name) || file.type === "text/csv";
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -35496,7 +35496,7 @@
           }
           const workbookData = {
             sheets: workbook.SheetNames.map((sheetName) => ({
-              name: sheetName,
+              name: isCsv && csvSheetName ? csvSheetName : sheetName,
               rows: utils.sheet_to_json(workbook.Sheets[sheetName])
             }))
           };
@@ -38882,8 +38882,24 @@
     const [error, setError] = d3(null);
     const fileInputRef = A2(null);
     const csvInputRef = A2(null);
+    const [myFictions, setMyFictions] = d3([]);
+    const [csvTargetFictionId, setCsvTargetFictionId] = d3("");
     const pollIntervalRef = A2(null);
     const writersGuildEnabled = getSetting("writersGuildEnabled");
+    y2(() => {
+      if (!isOpen)
+        return;
+      (async () => {
+        try {
+          const fictions = await getAll("myFictions") || [];
+          setMyFictions(fictions);
+          if (currentFictionId)
+            setCsvTargetFictionId(String(currentFictionId));
+        } catch (err) {
+          logger14.warn("Could not load myFictions for CSV target", err);
+        }
+      })();
+    }, [isOpen, currentFictionId]);
     y2(() => {
       if (!isOpen)
         return;
@@ -38958,16 +38974,13 @@
     const handleCsvImportClick = () => {
       csvInputRef.current?.click();
     };
-    const handleFileSelect = async (e4) => {
-      const file = e4.target.files?.[0];
-      if (!file)
-        return;
+    const doImport = async (file, opts = {}) => {
       setImporting(true);
       setError(null);
       setResult(null);
       setProgress({ current: 0, total: 0, imported: 0, duplicates: 0, skipped: 0 });
       try {
-        await importFromExcel(file);
+        await importFromExcel(file, opts);
       } catch (err) {
         logger14.error("Import failed", err);
         setError(`Import failed: ${err.message}`);
@@ -38979,6 +38992,24 @@
         if (csvInputRef.current)
           csvInputRef.current.value = "";
       }
+    };
+    const handleFileSelect = (e4) => {
+      const file = e4.target.files?.[0];
+      if (!file)
+        return;
+      doImport(file);
+    };
+    const handleCsvSelect = (e4) => {
+      const file = e4.target.files?.[0];
+      if (!file)
+        return;
+      let csvSheetName = "Unscheduled";
+      if (csvTargetFictionId) {
+        const f5 = myFictions.find((x3) => String(x3.fictionId) === String(csvTargetFictionId));
+        if (f5?.title)
+          csvSheetName = f5.title.substring(0, 31).replace(/[\\/*?:\[\]]/g, "");
+      }
+      doImport(file, { csvSheetName });
     };
     const handleWritersGuildImport = async () => {
       setImportingGuild(true);
@@ -39097,9 +39128,23 @@
               /* @__PURE__ */ u4("strong", { children: " Date" }),
               " and ",
               /* @__PURE__ */ u4("strong", { children: "Code" }),
-              ". CSVs are a single sheet, so rows land as ",
-              /* @__PURE__ */ u4("em", { children: "Unscheduled" }),
-              " unless you rename the sheet to match a fiction title \u2014 use the Excel template for automatic attribution."
+              ". Pick which fiction the rows should be attributed to (CSV files have no sheet name, so this is how we know where to put them)."
+            ] }),
+            /* @__PURE__ */ u4("div", { class: "rr-csv-target-row", children: [
+              /* @__PURE__ */ u4("label", { class: "rr-csv-target-label", for: "rr-csv-target", children: "Attribute rows to:" }),
+              /* @__PURE__ */ u4(
+                "select",
+                {
+                  id: "rr-csv-target",
+                  class: "form-control form-control-sm",
+                  value: csvTargetFictionId,
+                  onChange: (e4) => setCsvTargetFictionId(e4.target.value),
+                  children: [
+                    /* @__PURE__ */ u4("option", { value: "", children: "Unscheduled (no fiction)" }),
+                    myFictions.map((f5) => /* @__PURE__ */ u4("option", { value: String(f5.fictionId), children: f5.title || `Fiction ${f5.fictionId}` }, f5.fictionId))
+                  ]
+                }
+              )
             ] }),
             /* @__PURE__ */ u4(
               "input",
@@ -39108,7 +39153,7 @@
                 type: "file",
                 accept: ".csv",
                 style: { display: "none" },
-                onChange: handleFileSelect
+                onChange: handleCsvSelect
               }
             ),
             /* @__PURE__ */ u4(
@@ -43092,7 +43137,7 @@
   var ScannerModal_default = "/* Scanner Modal Styles */\n\n.rr-scanner-content {\n  display: flex;\n  flex-direction: column;\n  gap: 1rem;\n}\n\n.rr-scanner-fiction-select {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n}\n\n.rr-scanner-fiction-select select {\n  max-width: 400px;\n}\n\n.rr-scanner-description {\n  color: inherit;\n  opacity: 0.7;\n  font-size: 0.9rem;\n  margin: 0;\n}\n\n/* Progress */\n.rr-scanner-progress {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  padding: 1rem;\n  background: rgba(128, 128, 128, 0.1);\n  border-radius: 8px;\n}\n\n.rr-scanner-progress-bar {\n  height: 8px;\n  background: rgba(128, 128, 128, 0.2);\n  border-radius: 4px;\n  overflow: hidden;\n}\n\n.rr-scanner-progress-fill {\n  height: 100%;\n  background: #337ab7;\n  border-radius: 4px;\n  transition: width 0.3s ease;\n}\n\n.rr-scanner-progress-text {\n  font-size: 0.85rem;\n  opacity: 0.8;\n}\n\n.rr-scanner-found-count {\n  font-size: 0.85rem;\n  color: #28a745;\n  font-weight: 500;\n}\n\n/* Results */\n.rr-scanner-results {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  max-height: 200px;\n  overflow-y: auto;\n}\n\n.rr-scanner-results-header {\n  font-weight: 600;\n  font-size: 0.9rem;\n}\n\n.rr-scanner-results-list {\n  display: flex;\n  flex-direction: column;\n  gap: 0.25rem;\n}\n\n.rr-scanner-result-item {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  font-size: 0.85rem;\n  padding: 0.25rem 0;\n  border-bottom: 1px solid rgba(128, 128, 128, 0.1);\n}\n\n.rr-scanner-result-chapter {\n  font-weight: 500;\n  flex-shrink: 0;\n  max-width: 200px;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.rr-scanner-result-arrow {\n  opacity: 0.5;\n  flex-shrink: 0;\n}\n\n.rr-scanner-result-fiction {\n  color: #337ab7;\n  flex: 1;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.rr-scanner-result-author {\n  opacity: 0.6;\n  flex-shrink: 0;\n  font-size: 0.8rem;\n}\n\n/* Summary */\n.rr-scanner-summary {\n  padding: 1rem;\n  border-radius: 8px;\n  font-weight: 500;\n}\n\n.rr-scanner-summary-success {\n  background: rgba(40, 167, 69, 0.1);\n  color: #28a745;\n}\n\n.rr-scanner-summary-error {\n  background: rgba(220, 53, 69, 0.1);\n  color: #dc3545;\n}\n\n/* Checkbox */\n.rr-scanner-checkbox {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  cursor: pointer;\n  font-size: 0.9rem;\n}\n\n.rr-scanner-checkbox input {\n  cursor: pointer;\n}\n\n.rr-scanner-batch-label {\n  font-size: 0.8125rem;\n  font-weight: 500;\n  margin-bottom: 0.35rem;\n  opacity: 0.85;\n}\n\n.rr-scanner-phase {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  padding: 0.35rem 0.625rem;\n  margin-bottom: 0.75rem;\n  font-size: 0.75rem;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  border-radius: 999px;\n  background: rgba(0, 0, 0, 0.04);\n  width: fit-content;\n}\n.rr-scanner-phase-dot {\n  width: 7px;\n  height: 7px;\n  border-radius: 50%;\n  background: #999;\n  flex-shrink: 0;\n}\n.rr-scanner-phase--idle .rr-scanner-phase-dot { background: #9ca3af; }\n.rr-scanner-phase--scanning .rr-scanner-phase-dot {\n  background: #3b82f6;\n  animation: rr-scanner-pulse 1.2s ease-in-out infinite;\n}\n.rr-scanner-phase--swap-check .rr-scanner-phase-dot {\n  background: #a855f7;\n  animation: rr-scanner-pulse 1.2s ease-in-out infinite;\n}\n.rr-scanner-phase--complete .rr-scanner-phase-dot { background: #22c55e; }\n.rr-scanner-phase--error .rr-scanner-phase-dot { background: #ef4444; }\n@keyframes rr-scanner-pulse {\n  0%, 100% { opacity: 1; transform: scale(1); }\n  50% { opacity: 0.55; transform: scale(0.85); }\n}\n";
 
   // src/shout_out_swapper/ui/export/ExportImportModal.css
-  var ExportImportModal_default = "/* Export/Import Modal styles */\n\n.rr-export-import-content {\n  padding: 0.5rem 0;\n}\n\n.rr-export-section,\n.rr-import-section {\n  margin-bottom: 1rem;\n}\n\n.rr-export-section h5,\n.rr-import-section h5 {\n  margin-bottom: 0.5rem;\n  font-weight: 600;\n}\n\n.rr-export-section p,\n.rr-import-section p {\n  margin-bottom: 0.75rem;\n  font-size: 0.85rem;\n}\n\n.rr-template-section {\n  margin-top: 0.25rem;\n}\n\n.rr-template-section h5 {\n  margin-bottom: 0.5rem;\n  font-weight: 600;\n}\n\n.rr-template-section p {\n  margin-bottom: 0.75rem;\n  font-size: 0.85rem;\n}\n\n.rr-import-progress {\n  margin-top: 1rem;\n}\n\n.rr-import-progress .progress {\n  height: 8px;\n  border-radius: 4px;\n  background: rgba(128, 128, 128, 0.2);\n  overflow: hidden;\n  margin-bottom: 0.5rem;\n}\n\n.rr-import-progress .progress-bar {\n  height: 100%;\n  background: #337ab7;\n  transition: width 0.2s ease;\n}\n\n.rr-import-progress small {\n  display: block;\n}\n";
+  var ExportImportModal_default = "/* Export/Import Modal styles */\n\n.rr-export-import-content {\n  padding: 0.5rem 0;\n}\n\n.rr-export-section,\n.rr-import-section {\n  margin-bottom: 1rem;\n}\n\n.rr-export-section h5,\n.rr-import-section h5 {\n  margin-bottom: 0.5rem;\n  font-weight: 600;\n}\n\n.rr-export-section p,\n.rr-import-section p {\n  margin-bottom: 0.75rem;\n  font-size: 0.85rem;\n}\n\n.rr-csv-target-row {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  margin-bottom: 0.75rem;\n}\n\n.rr-csv-target-label {\n  font-size: 0.8rem;\n  white-space: nowrap;\n  margin-bottom: 0;\n}\n\n.rr-csv-target-row select {\n  flex: 1;\n  min-width: 0;\n}\n\n.rr-template-section {\n  margin-top: 0.25rem;\n}\n\n.rr-template-section h5 {\n  margin-bottom: 0.5rem;\n  font-weight: 600;\n}\n\n.rr-template-section p {\n  margin-bottom: 0.75rem;\n  font-size: 0.85rem;\n}\n\n.rr-import-progress {\n  margin-top: 1rem;\n}\n\n.rr-import-progress .progress {\n  height: 8px;\n  border-radius: 4px;\n  background: rgba(128, 128, 128, 0.2);\n  overflow: hidden;\n  margin-bottom: 0.5rem;\n}\n\n.rr-import-progress .progress-bar {\n  height: 100%;\n  background: #337ab7;\n  transition: width 0.2s ease;\n}\n\n.rr-import-progress small {\n  display: block;\n}\n";
 
   // src/common/settings/ui/SettingsModal.css
   var SettingsModal_default = '/* Settings Modal Styles */\n\n.rr-settings-form {\n  display: flex;\n  flex-direction: column;\n  gap: 1.25rem;\n}\n\n.rr-settings-group {\n  display: flex;\n  flex-direction: column;\n  gap: 0.25rem;\n}\n\n.rr-settings-label {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  font-weight: 500;\n  cursor: pointer;\n}\n\n.rr-settings-label input[type="checkbox"],\n.rr-settings-label input[type="radio"] {\n  margin: 0;\n}\n\n.rr-settings-label-disabled {\n  opacity: 0.6;\n  cursor: not-allowed;\n}\n\n.rr-settings-description {\n  margin: 0;\n  margin-left: 1.5rem;\n  font-size: 0.85rem;\n  color: rgba(128, 128, 128, 0.8);\n}\n\n.rr-settings-options {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  margin-left: 0.5rem;\n  margin-top: 0.5rem;\n}\n\n.rr-settings-radio {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  cursor: pointer;\n}\n\n.rr-settings-badge {\n  font-size: 0.7rem;\n  padding: 0.15rem 0.4rem;\n  background: rgba(128, 128, 128, 0.2);\n  border-radius: 4px;\n  margin-left: 0.5rem;\n}\n\n.rr-settings-danger {\n  padding-top: 1rem;\n  border-top: 1px solid rgba(128, 128, 128, 0.2);\n}\n\n.rr-settings-danger .rr-settings-label {\n  color: #dc3545;\n}\n\n.rr-settings-danger .rr-settings-description {\n  margin-left: 0;\n}\n';

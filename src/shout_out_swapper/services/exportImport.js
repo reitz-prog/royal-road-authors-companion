@@ -218,14 +218,14 @@ function extractFictionIdFromCode(code) {
  * Import shoutouts from a file — accepts .xlsx/.xls/.csv. Runs in
  * background; returns immediately, progress via getImportState().
  *
- * CSV files produce a single sheet named "Sheet1"; the background importer
- * treats any sheet name that doesn't match a known fiction as unscheduled.
- * So to attribute a CSV to a specific fiction, the user should rename it
- * to match the fiction title before using the Excel importer — or stick
- * with the Excel template which already gets the sheet names right.
+ * Options:
+ *   csvSheetName — when importing a CSV, the (single) sheet will be
+ *     renamed to this value before being sent to the background importer.
+ *     Use the title of one of the user's fictions to attribute rows to
+ *     that fiction; use "Unscheduled" to park rows with no date.
  */
-export async function importFromExcel(file) {
-  logger.info('Starting import (background)...', { name: file.name });
+export async function importFromExcel(file, { csvSheetName } = {}) {
+  logger.info('Starting import (background)...', { name: file.name, csvSheetName });
 
   const isCsv = /\.csv$/i.test(file.name) || file.type === 'text/csv';
 
@@ -247,7 +247,7 @@ export async function importFromExcel(file) {
 
         const workbookData = {
           sheets: workbook.SheetNames.map(sheetName => ({
-            name: sheetName,
+            name: isCsv && csvSheetName ? csvSheetName : sheetName,
             rows: XLSX.utils.sheet_to_json(workbook.Sheets[sheetName])
           }))
         };
