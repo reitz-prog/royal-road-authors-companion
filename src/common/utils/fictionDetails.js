@@ -84,7 +84,21 @@ function extractAuthor(doc) {
   }
 
   // Fallback: meta-tag name, match against any /profile/ link by text content.
+  // Legacy RR layout puts the avatar in a `.avatar-container-general` div that
+  // lives separately from the profile link, so we look for the avatar by its
+  // alt text (= author name) instead of requiring it to be nested in the link.
   if (metaAuthor) {
+    let avatarUrl = '';
+    for (const img of doc.querySelectorAll('img[data-type="avatar"][alt]')) {
+      const alt = (img.getAttribute('alt') || '').trim();
+      if (alt !== metaAuthor) continue;
+      const src = img.getAttribute('src') || '';
+      if (src.includes('royalroadcdn.com') && src.includes('/avatars/avatar-')) {
+        avatarUrl = src;
+        break;
+      }
+    }
+
     for (const link of doc.querySelectorAll('a[href*="/profile/"]')) {
       const text = (link.textContent || '').trim();
       if (text && (text === metaAuthor || text.includes(metaAuthor) || metaAuthor.includes(text))) {
@@ -94,12 +108,12 @@ function extractAuthor(doc) {
             authorName: metaAuthor,
             profileId: m[1],
             profileUrl: `https://www.royalroad.com/profile/${m[1]}`,
-            authorAvatar: '',
+            authorAvatar: avatarUrl,
           };
         }
       }
     }
-    return { authorName: metaAuthor, profileId: null, profileUrl: '', authorAvatar: '' };
+    return { authorName: metaAuthor, profileId: null, profileUrl: '', authorAvatar: avatarUrl };
   }
 
   // Last resort: any profile link with an <h4> (legacy layout).

@@ -273,13 +273,22 @@ async function broadcastToTabs(message) {
 }
 
 // ============ OFFSCREEN DOCUMENT MANAGEMENT ============
+//
+// On Chrome MV3 the service worker has no DOMParser, so HTML parsing is
+// delegated to an offscreen document via chrome.runtime.sendMessage.
+// On Firefox MV3 the background is a regular event page — DOMParser is
+// already available — so the offscreen doc is skipped and parsers are
+// imported directly.
 
+import * as parsers from '../common/parsers/index.js';
+
+const OFFSCREEN_SUPPORTED = typeof chrome !== 'undefined' && !!chrome.offscreen;
 let creatingOffscreen = null;
 
 async function ensureOffscreenDocument() {
-  if (!chrome.offscreen) {
-    console.error('[RR Companion BG] chrome.offscreen API not available');
-    throw new Error('Offscreen API not available - please reload the extension');
+  if (!OFFSCREEN_SUPPORTED) {
+    // Firefox: nothing to do. parseInContext() calls parsers directly.
+    return;
   }
 
   const offscreenUrl = chrome.runtime.getURL('offscreen.html');
@@ -309,6 +318,31 @@ async function ensureOffscreenDocument() {
   console.log('[RR Companion BG] Offscreen document created');
 }
 
+// Route a parse request to whichever parser context is available.
+// Matches the shape the offscreen document's onMessage listener returns
+// ({ success, data, error }) so callers don't branch.
+async function parseInContext(type, payload) {
+  const callers = {
+    parseChapterList: () => parsers.parseChapterList(payload.html, payload.fictionId),
+    parseChapterNotes: () => parsers.parseChapterNotes(payload.html, payload.chapterUrl),
+    extractShoutouts: () => parsers.extractShoutouts(payload.html, payload.excludeFictionId),
+    parseFictionDetails: () => parsers.parseFictionDetails(payload.html, payload.fictionId),
+  };
+
+  if (!OFFSCREEN_SUPPORTED) {
+    const fn = callers[type];
+    if (!fn) return { success: false, error: `Unknown parse type: ${type}` };
+    try {
+      return { success: true, data: fn() };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  await ensureOffscreenDocument();
+  return chrome.runtime.sendMessage({ type, ...payload });
+}
+
 // ============ PARSING VIA OFFSCREEN ============
 
 async function fetchChapterList(fictionId) {
@@ -321,13 +355,7 @@ async function fetchChapterList(fictionId) {
   }
 
   const html = await response.text();
-  await ensureOffscreenDocument();
-
-  const result = await chrome.runtime.sendMessage({
-    type: 'parseChapterList',
-    html,
-    fictionId
-  });
+  const result = await parseInContext('parseChapterList', { html, fictionId });
 
   if (!result?.success) {
     throw new Error(result?.error || 'Failed to parse chapter list');
@@ -344,13 +372,7 @@ async function fetchChapterNotes(chapterUrl) {
   }
 
   const html = await response.text();
-  await ensureOffscreenDocument();
-
-  const result = await chrome.runtime.sendMessage({
-    type: 'parseChapterNotes',
-    html,
-    chapterUrl
-  });
+  const result = await parseInContext('parseChapterNotes', { html, chapterUrl });
 
   if (!result?.success) {
     throw new Error(result?.error || 'Failed to parse chapter notes');
@@ -360,13 +382,7 @@ async function fetchChapterNotes(chapterUrl) {
 }
 
 async function extractShoutoutsFromHtml(html, excludeFictionId) {
-  await ensureOffscreenDocument();
-
-  const result = await chrome.runtime.sendMessage({
-    type: 'extractShoutouts',
-    html,
-    excludeFictionId
-  });
+  const result = await parseInContext('extractShoutouts', { html, excludeFictionId });
 
   if (!result?.success) {
     throw new Error(result?.error || 'Failed to extract shoutouts');
@@ -388,13 +404,7 @@ async function fetchFictionDetails(fictionId) {
   const html = await response.text();
   authorLogger.debug('Got HTML response', { fictionId, htmlLength: html.length });
 
-  await ensureOffscreenDocument();
-
-  const result = await chrome.runtime.sendMessage({
-    type: 'parseFictionDetails',
-    html,
-    fictionId
-  });
+  const result = await parseInContext('parseFictionDetails', { html, fictionId });
 
   if (!result?.success) {
     authorLogger.error('Failed to parse fiction details', { fictionId, error: result?.error });
@@ -973,10 +983,9 @@ async function checkAllSwaps(opts = {}) {
         }
 
         const chapterListHtml = await chapterListResponse.text();
-        const parseResponse = await chrome.runtime.sendMessage({
-          type: 'parseChapterList',
+        const parseResponse = await parseInContext('parseChapterList', {
           html: chapterListHtml,
-          fictionId: shoutout.fictionId
+          fictionId: shoutout.fictionId,
         });
 
         if (!parseResponse?.success) {
@@ -1026,10 +1035,9 @@ async function checkAllSwaps(opts = {}) {
             if (!chapterResponse.ok) continue;
 
             const chapterHtml = await chapterResponse.text();
-            const parseNotesResponse = await chrome.runtime.sendMessage({
-              type: 'parseChapterNotes',
+            const parseNotesResponse = await parseInContext('parseChapterNotes', {
               html: chapterHtml,
-              chapterUrl: chapter.url
+              chapterUrl: chapter.url,
             });
 
             if (!parseNotesResponse?.success) continue;
@@ -1151,12 +1159,10 @@ async function checkSwapReturn(shoutoutId, theirFictionId, myFictionIds) {
     const chapterListHtml = await chapterListResponse.text();
     console.log('[RR Companion BG] Got HTML, length:', chapterListHtml.length);
 
-    // Parse chapter list via offscreen (use same format as fetchChapterList)
-    console.log('[RR Companion BG] Sending to offscreen for parsing...');
-    const parseChaptersResponse = await chrome.runtime.sendMessage({
-      type: 'parseChapterList',
+    console.log('[RR Companion BG] Parsing chapter list...');
+    const parseChaptersResponse = await parseInContext('parseChapterList', {
       html: chapterListHtml,
-      fictionId: theirFictionId
+      fictionId: theirFictionId,
     });
 
     console.log('[RR Companion BG] Parse response:', parseChaptersResponse);
@@ -1221,10 +1227,9 @@ async function checkSwapReturn(shoutoutId, theirFictionId, myFictionIds) {
         }
         const chapterHtml = await chapterResponse.text();
 
-        const parseNotesResponse = await chrome.runtime.sendMessage({
-          type: 'parseChapterNotes',
+        const parseNotesResponse = await parseInContext('parseChapterNotes', {
           html: chapterHtml,
-          chapterUrl: chapter.url
+          chapterUrl: chapter.url,
         });
 
         if (!parseNotesResponse?.success) {

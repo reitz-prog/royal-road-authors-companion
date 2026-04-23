@@ -1,5 +1,6 @@
 // Shared UI Components - Uses Royal Road's native Bootstrap styling
-import { h } from 'preact';
+import { h, toChildArray } from 'preact';
+import { useState, useRef, useEffect } from 'preact/hooks';
 
 /**
  * Native RR-styled select dropdown
@@ -15,6 +16,86 @@ export function Select({ value, onChange, children, size = 'md', className = '',
     >
       {children}
     </select>
+  );
+}
+
+/**
+ * ThemedSelect — a non-native replacement for `<select>` whose option list
+ * can actually be styled. The native select's dropdown panel is drawn by
+ * the OS and can't be fully themed (stays white on dark pages in many
+ * browsers), so when that matters use this instead.
+ *
+ * Accepts `<option value>label</option>` children to stay drop-in with
+ * the native Select. `onChange` is called with a synthetic event of shape
+ * `{ target: { value } }` to match the existing onChange contract.
+ */
+export function ThemedSelect({ value, onChange, children, size = 'md', className = '', id, disabled = false, ...props }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  // Flatten children into {value, label} pairs. Supports native <option>
+  // children as used by Select.
+  const options = toChildArray(children)
+    .filter(c => c && c.props)
+    .map(c => ({
+      value: c.props.value ?? '',
+      label: c.props.children ?? ''
+    }));
+
+  const selected = options.find(o => String(o.value) === String(value ?? ''));
+  const sizeClass = size === 'sm' ? 'form-control-sm' : size === 'lg' ? 'form-control-lg' : '';
+
+  const pick = (v) => {
+    onChange?.({ target: { value: v } });
+    setOpen(false);
+  };
+
+  return (
+    <div class={`rr-themed-select ${open ? 'is-open' : ''} ${className}`.trim()} ref={ref} id={id}>
+      <button
+        type="button"
+        class={`form-control ${sizeClass} rr-themed-select-btn`.trim()}
+        onClick={() => !disabled && setOpen(o => !o)}
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        {...props}
+      >
+        <span class="rr-themed-select-value">{selected ? selected.label : ''}</span>
+        <i class={`fa fa-caret-${open ? 'up' : 'down'} rr-themed-select-caret`}></i>
+      </button>
+      {open && (
+        <ul class="rr-themed-select-menu" role="listbox">
+          {options.map((opt, i) => (
+            <li
+              key={i}
+              class={`rr-themed-select-option ${String(opt.value) === String(value ?? '') ? 'is-active' : ''}`}
+              role="option"
+              aria-selected={String(opt.value) === String(value ?? '')}
+              onClick={() => pick(opt.value)}
+            >
+              {opt.label}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -197,6 +278,7 @@ export function Alert({ children, variant = 'info', className = '' }) {
 
 export default {
   Select,
+  ThemedSelect,
   Input,
   Textarea,
   Button,

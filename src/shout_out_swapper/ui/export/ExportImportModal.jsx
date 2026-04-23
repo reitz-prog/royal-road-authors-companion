@@ -6,6 +6,7 @@ import { exportToExcel, importFromExcel, downloadEmptyTemplate, getImportState }
 import { getSetting } from '../../../common/settings/core.js';
 import { log } from '../../../common/logging/core.js';
 import * as db from '../../../common/db/proxy.js';
+import { ThemedSelect } from '../../../common/ui/components/index.jsx';
 
 const logger = log.scope('export-import-modal');
 
@@ -293,9 +294,9 @@ export function ExportImportModal({ isOpen, onClose, onComplete, currentFictionI
           </p>
           <div class="rr-csv-target-row">
             <label class="rr-csv-target-label" for="rr-csv-target">Attribute rows to:</label>
-            <select
+            <ThemedSelect
               id="rr-csv-target"
-              class="form-control form-control-sm"
+              size="sm"
               value={csvTargetFictionId}
               onChange={(e) => setCsvTargetFictionId(e.target.value)}
             >
@@ -305,7 +306,7 @@ export function ExportImportModal({ isOpen, onClose, onComplete, currentFictionI
                   {f.title || `Fiction ${f.fictionId}`}
                 </option>
               ))}
-            </select>
+            </ThemedSelect>
           </div>
           <input
             ref={csvInputRef}

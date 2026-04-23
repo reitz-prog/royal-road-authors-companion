@@ -744,6 +744,67 @@
       }
     );
   }
+  function ThemedSelect({ value, onChange, children, size = "md", className = "", id, disabled = false, ...props }) {
+    const [open, setOpen] = d3(false);
+    const ref = A2(null);
+    y2(() => {
+      if (!open)
+        return;
+      const onDoc = (e4) => {
+        if (ref.current && !ref.current.contains(e4.target))
+          setOpen(false);
+      };
+      const onKey = (e4) => {
+        if (e4.key === "Escape")
+          setOpen(false);
+      };
+      document.addEventListener("mousedown", onDoc);
+      document.addEventListener("keydown", onKey);
+      return () => {
+        document.removeEventListener("mousedown", onDoc);
+        document.removeEventListener("keydown", onKey);
+      };
+    }, [open]);
+    const options = F(children).filter((c4) => c4 && c4.props).map((c4) => ({
+      value: c4.props.value ?? "",
+      label: c4.props.children ?? ""
+    }));
+    const selected = options.find((o4) => String(o4.value) === String(value ?? ""));
+    const sizeClass = size === "sm" ? "form-control-sm" : size === "lg" ? "form-control-lg" : "";
+    const pick = (v3) => {
+      onChange?.({ target: { value: v3 } });
+      setOpen(false);
+    };
+    return /* @__PURE__ */ u4("div", { class: `rr-themed-select ${open ? "is-open" : ""} ${className}`.trim(), ref, id, children: [
+      /* @__PURE__ */ u4(
+        "button",
+        {
+          type: "button",
+          class: `form-control ${sizeClass} rr-themed-select-btn`.trim(),
+          onClick: () => !disabled && setOpen((o4) => !o4),
+          disabled,
+          "aria-haspopup": "listbox",
+          "aria-expanded": open,
+          ...props,
+          children: [
+            /* @__PURE__ */ u4("span", { class: "rr-themed-select-value", children: selected ? selected.label : "" }),
+            /* @__PURE__ */ u4("i", { class: `fa fa-caret-${open ? "up" : "down"} rr-themed-select-caret` })
+          ]
+        }
+      ),
+      open && /* @__PURE__ */ u4("ul", { class: "rr-themed-select-menu", role: "listbox", children: options.map((opt, i5) => /* @__PURE__ */ u4(
+        "li",
+        {
+          class: `rr-themed-select-option ${String(opt.value) === String(value ?? "") ? "is-active" : ""}`,
+          role: "option",
+          "aria-selected": String(opt.value) === String(value ?? ""),
+          onClick: () => pick(opt.value),
+          children: opt.label
+        },
+        i5
+      )) })
+    ] });
+  }
   function IconButton({ icon, onClick, variant = "light", title = "", className = "", ...props }) {
     return /* @__PURE__ */ u4(
       "button",
@@ -35166,6 +35227,17 @@
       };
     }
     if (metaAuthor) {
+      let avatarUrl = "";
+      for (const img of doc.querySelectorAll('img[data-type="avatar"][alt]')) {
+        const alt = (img.getAttribute("alt") || "").trim();
+        if (alt !== metaAuthor)
+          continue;
+        const src = img.getAttribute("src") || "";
+        if (src.includes("royalroadcdn.com") && src.includes("/avatars/avatar-")) {
+          avatarUrl = src;
+          break;
+        }
+      }
       for (const link of doc.querySelectorAll('a[href*="/profile/"]')) {
         const text = (link.textContent || "").trim();
         if (text && (text === metaAuthor || text.includes(metaAuthor) || metaAuthor.includes(text))) {
@@ -35175,12 +35247,12 @@
               authorName: metaAuthor,
               profileId: m4[1],
               profileUrl: `https://www.royalroad.com/profile/${m4[1]}`,
-              authorAvatar: ""
+              authorAvatar: avatarUrl
             };
           }
         }
       }
-      return { authorName: metaAuthor, profileId: null, profileUrl: "", authorAvatar: "" };
+      return { authorName: metaAuthor, profileId: null, profileUrl: "", authorAvatar: avatarUrl };
     }
     for (const link of doc.querySelectorAll('a[href*="/profile/"]')) {
       const h4 = link.querySelector("h4");
@@ -35482,48 +35554,43 @@
   async function importFromExcel(file, { csvSheetName } = {}) {
     logger6.info("Starting import (background)...", { name: file.name, csvSheetName });
     const isCsv = /\.csv$/i.test(file.name) || file.type === "text/csv";
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = async (e4) => {
-        try {
-          let workbook;
-          if (isCsv) {
-            const text = typeof e4.target.result === "string" ? e4.target.result : new TextDecoder().decode(new Uint8Array(e4.target.result));
-            workbook = readSync(text, { type: "string" });
-          } else {
-            const data = new Uint8Array(e4.target.result);
-            workbook = readSync(data, { type: "array" });
-          }
-          const workbookData = {
-            sheets: workbook.SheetNames.map((sheetName) => ({
-              name: isCsv && csvSheetName ? csvSheetName : sheetName,
-              rows: utils.sheet_to_json(workbook.Sheets[sheetName])
-            }))
-          };
-          chrome.runtime.sendMessage({
-            type: "startImport",
-            workbookData
-          }, (response) => {
-            if (chrome.runtime.lastError) {
-              reject(new Error(chrome.runtime.lastError.message));
-            } else if (response?.started) {
-              logger6.info("Import started in background");
-              resolve({ started: true });
-            } else {
-              reject(new Error(response?.reason || "Failed to start import"));
-            }
-          });
-        } catch (err) {
-          logger6.error("Import failed", err);
-          reject(err);
-        }
-      };
-      reader.onerror = () => reject(reader.error);
+    let workbook;
+    try {
       if (isCsv) {
-        reader.readAsText(file);
+        const rawText = await file.text();
+        const text = String(rawText);
+        workbook = readSync(text, { type: "string" });
       } else {
-        reader.readAsArrayBuffer(file);
+        const rawBuffer = await file.arrayBuffer();
+        const cleanBuffer = structuredClone(rawBuffer);
+        const bytes = new Uint8Array(cleanBuffer.byteLength);
+        bytes.set(new Uint8Array(cleanBuffer));
+        workbook = readSync(bytes, { type: "array" });
       }
+    } catch (err) {
+      logger6.error("Failed to parse file", err);
+      throw err;
+    }
+    const workbookData = JSON.parse(JSON.stringify({
+      sheets: workbook.SheetNames.map((sheetName) => ({
+        name: isCsv && csvSheetName ? csvSheetName : sheetName,
+        rows: utils.sheet_to_json(workbook.Sheets[sheetName])
+      }))
+    }));
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({
+        type: "startImport",
+        workbookData
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else if (response?.started) {
+          logger6.info("Import started in background");
+          resolve({ started: true });
+        } else {
+          reject(new Error(response?.reason || "Failed to start import"));
+        }
+      });
     });
   }
   function getImportState() {
@@ -39133,10 +39200,10 @@
             /* @__PURE__ */ u4("div", { class: "rr-csv-target-row", children: [
               /* @__PURE__ */ u4("label", { class: "rr-csv-target-label", for: "rr-csv-target", children: "Attribute rows to:" }),
               /* @__PURE__ */ u4(
-                "select",
+                ThemedSelect,
                 {
                   id: "rr-csv-target",
-                  class: "form-control form-control-sm",
+                  size: "sm",
                   value: csvTargetFictionId,
                   onChange: (e4) => setCsvTargetFictionId(e4.target.value),
                   children: [
@@ -41446,6 +41513,15 @@
   max-width: 900px;
   display: flex;
   flex-direction: column;
+  /* Let native form controls (select option dropdowns in particular) match
+     the host page's theme instead of defaulting to white on a dark page. */
+  color-scheme: light dark;
+}
+
+.rr-modal select,
+.rr-modal input,
+.rr-modal textarea {
+  color-scheme: inherit;
 }
 
 .rr-modal-small {
@@ -41553,26 +41629,107 @@
   color: rgba(128, 128, 128, 0.8);
 }
 
+/* Beat RR's Bootstrap/Metronic form-control styling (which hardcodes a
+   white background) with !important on the closed-state colours. The
+   option dropdown (drawn by the OS) is handled via color-scheme above. */
 .rr-modal input[type="text"],
 .rr-modal input[type="date"],
 .rr-modal textarea,
 .rr-modal select {
   width: 100%;
   padding: 0.5rem 0.75rem;
-  background: rgba(128, 128, 128, 0.08);
-  border: 1px solid rgba(128, 128, 128, 0.15);
+  background: rgba(128, 128, 128, 0.08) !important;
+  border: 1px solid rgba(128, 128, 128, 0.15) !important;
   border-radius: 4px;
-  color: inherit;
+  color: inherit !important;
   font-size: 0.9rem;
   transition: border-color 0.15s, background-color 0.15s;
+}
+
+.rr-modal select option {
+  /* Inherit the page/modal background so the option list matches when the
+     browser supports themed controls. Native dropdowns on some systems
+     still paint white \u2014 that's a browser limitation. */
+  background-color: inherit;
+  color: inherit;
+}
+
+/* Fully-styled select replacement (ThemedSelect component). Used when the
+   native OS-drawn <select> option panel can't be themed. */
+.rr-themed-select {
+  position: relative;
+  width: 100%;
+}
+
+.rr-themed-select-btn {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rr-themed-select-btn[disabled] {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.rr-themed-select-value {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rr-themed-select-caret {
+  opacity: 0.6;
+  margin-left: 0.5rem;
+  flex-shrink: 0;
+}
+
+.rr-themed-select-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 100;
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem 0;
+  background: var(--rr-card-bg, #2b2b2b);
+  color: inherit;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.rr-themed-select-option {
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: inherit;
+  background: transparent;
+}
+
+.rr-themed-select-option:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.rr-themed-select-option.is-active {
+  background: rgba(51, 122, 183, 0.2);
+  color: #337ab7;
+  font-weight: 500;
 }
 
 .rr-modal input:focus,
 .rr-modal textarea:focus,
 .rr-modal select:focus {
   outline: none;
-  border-color: rgba(128, 128, 128, 0.4);
-  background: rgba(128, 128, 128, 0.12);
+  border-color: rgba(128, 128, 128, 0.4) !important;
+  background: rgba(128, 128, 128, 0.12) !important;
 }
 
 .rr-modal textarea {

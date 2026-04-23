@@ -229,55 +229,54 @@ export async function importFromExcel(file, { csvSheetName } = {}) {
 
   const isCsv = /\.csv$/i.test(file.name) || file.type === 'text/csv';
 
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onload = async (e) => {
-      try {
-        let workbook;
-        if (isCsv) {
-          const text = typeof e.target.result === 'string'
-            ? e.target.result
-            : new TextDecoder().decode(new Uint8Array(e.target.result));
-          workbook = XLSX.read(text, { type: 'string' });
-        } else {
-          const data = new Uint8Array(e.target.result);
-          workbook = XLSX.read(data, { type: 'array' });
-        }
-
-        const workbookData = {
-          sheets: workbook.SheetNames.map(sheetName => ({
-            name: isCsv && csvSheetName ? csvSheetName : sheetName,
-            rows: XLSX.utils.sheet_to_json(workbook.Sheets[sheetName])
-          }))
-        };
-
-        chrome.runtime.sendMessage({
-          type: 'startImport',
-          workbookData
-        }, (response) => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
-          } else if (response?.started) {
-            logger.info('Import started in background');
-            resolve({ started: true });
-          } else {
-            reject(new Error(response?.reason || 'Failed to start import'));
-          }
-        });
-
-      } catch (err) {
-        logger.error('Import failed', err);
-        reject(err);
-      }
-    };
-
-    reader.onerror = () => reject(reader.error);
+  let workbook;
+  try {
+    // The <input type="file"> lives in page-owned DOM when rendered by a
+    // content script, so on Firefox the returned ArrayBuffer / string is
+    // wrapped in Xray vision. xlsx trips on "Permission denied to access
+    // property 'constructor'" as soon as its internals reach for the
+    // prototype. structuredClone copies the bytes into content-script
+    // principal — unwrapped, plain, safe for xlsx to inspect.
     if (isCsv) {
-      reader.readAsText(file);
+      const rawText = await file.text();
+      const text = String(rawText);
+      workbook = XLSX.read(text, { type: 'string' });
     } else {
-      reader.readAsArrayBuffer(file);
+      const rawBuffer = await file.arrayBuffer();
+      const cleanBuffer = structuredClone(rawBuffer);
+      const bytes = new Uint8Array(cleanBuffer.byteLength);
+      bytes.set(new Uint8Array(cleanBuffer));
+      workbook = XLSX.read(bytes, { type: 'array' });
     }
+  } catch (err) {
+    logger.error('Failed to parse file', err);
+    throw err;
+  }
+
+  // Serialize via JSON round-trip so the payload sent to the background
+  // is a clean plain object — Firefox's structured-clone path can fail
+  // on xlsx-internal objects with non-cloneable prototypes.
+  const workbookData = JSON.parse(JSON.stringify({
+    sheets: workbook.SheetNames.map(sheetName => ({
+      name: isCsv && csvSheetName ? csvSheetName : sheetName,
+      rows: XLSX.utils.sheet_to_json(workbook.Sheets[sheetName])
+    }))
+  }));
+
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({
+      type: 'startImport',
+      workbookData
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else if (response?.started) {
+        logger.info('Import started in background');
+        resolve({ started: true });
+      } else {
+        reject(new Error(response?.reason || 'Failed to start import'));
+      }
+    });
   });
 }
 

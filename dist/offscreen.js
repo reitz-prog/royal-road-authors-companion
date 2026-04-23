@@ -64,6 +64,17 @@
       };
     }
     if (metaAuthor) {
+      let avatarUrl = "";
+      for (const img of doc.querySelectorAll('img[data-type="avatar"][alt]')) {
+        const alt = (img.getAttribute("alt") || "").trim();
+        if (alt !== metaAuthor)
+          continue;
+        const src = img.getAttribute("src") || "";
+        if (src.includes("royalroadcdn.com") && src.includes("/avatars/avatar-")) {
+          avatarUrl = src;
+          break;
+        }
+      }
       for (const link of doc.querySelectorAll('a[href*="/profile/"]')) {
         const text = (link.textContent || "").trim();
         if (text && (text === metaAuthor || text.includes(metaAuthor) || metaAuthor.includes(text))) {
@@ -73,12 +84,12 @@
               authorName: metaAuthor,
               profileId: m[1],
               profileUrl: `https://www.royalroad.com/profile/${m[1]}`,
-              authorAvatar: ""
+              authorAvatar: avatarUrl
             };
           }
         }
       }
-      return { authorName: metaAuthor, profileId: null, profileUrl: "", authorAvatar: "" };
+      return { authorName: metaAuthor, profileId: null, profileUrl: "", authorAvatar: avatarUrl };
     }
     for (const link of doc.querySelectorAll('a[href*="/profile/"]')) {
       const h4 = link.querySelector("h4");
@@ -97,8 +108,8 @@
     return { authorName: "", profileId: null, profileUrl: "", authorAvatar: "" };
   }
 
-  // src/offscreen/index.js
-  console.log("[RR Companion Offscreen] Loaded");
+  // src/common/parsers/index.js
+  var parseFictionDetails2 = parseFictionDetails;
   function parseChapterList(html, fictionId) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, "text/html");
@@ -225,15 +236,18 @@
     }
     return results;
   }
+
+  // src/offscreen/index.js
+  console.log("[RR Companion Offscreen] Loaded");
   if (typeof window !== "undefined") {
-    window.__rrParsers = { parseChapterList, parseChapterNotes, extractShoutouts, parseFictionDetails };
+    window.__rrParsers = { parseChapterList, parseChapterNotes, extractShoutouts, parseFictionDetails: parseFictionDetails2 };
   }
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const handlers = {
       parseChapterList: () => parseChapterList(request.html, request.fictionId),
       parseChapterNotes: () => parseChapterNotes(request.html, request.chapterUrl),
       extractShoutouts: () => extractShoutouts(request.html, request.excludeFictionId),
-      parseFictionDetails: () => parseFictionDetails(request.html, request.fictionId)
+      parseFictionDetails: () => parseFictionDetails2(request.html, request.fictionId)
     };
     const handler = handlers[request.type];
     if (!handler)
