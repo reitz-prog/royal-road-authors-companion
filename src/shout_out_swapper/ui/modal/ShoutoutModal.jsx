@@ -223,10 +223,16 @@ export function ShoutoutModal({
     };
   }, [isOpen, shoutout?.id]);
 
-  // Parse code when it changes (only for new code, not cached)
+  // Parse code when it changes. We keep the cached author info on the
+  // first render of an edit so we don't burn a fetch to re-derive what we
+  // already know — but once the user actually edits the code (so it no
+  // longer matches the stored code), fall through and re-parse. Otherwise
+  // the preview panel gets stuck showing the old fiction even after the
+  // code has been replaced with a different shoutout's code.
   useEffect(() => {
-    // Skip if we already have cached author info from shoutout
-    if (shoutout?.fictionTitle || shoutout?.authorName) {
+    const hasCache = shoutout?.fictionTitle || shoutout?.authorName;
+    const codeUnchanged = (shoutout?.code || '').trim() === code.trim();
+    if (hasCache && codeUnchanged) {
       return;
     }
 

@@ -37858,7 +37858,9 @@
       };
     }, [isOpen, shoutout?.id]);
     y2(() => {
-      if (shoutout?.fictionTitle || shoutout?.authorName) {
+      const hasCache = shoutout?.fictionTitle || shoutout?.authorName;
+      const codeUnchanged = (shoutout?.code || "").trim() === code.trim();
+      if (hasCache && codeUnchanged) {
         return;
       }
       if (!code.trim()) {
@@ -39345,7 +39347,8 @@
             }
           }
         }
-        const schedules = data.schedules && data.schedules.length > 0 ? data.schedules : [{ date: modalDate, fictionId: filterFictionId }];
+        const isEdit = !!data.id;
+        const schedules = isEdit ? data.schedules || [] : data.schedules && data.schedules.length > 0 ? data.schedules : [{ date: modalDate, fictionId: filterFictionId }];
         const shoutoutData = {
           id: data.id,
           code: data.code,

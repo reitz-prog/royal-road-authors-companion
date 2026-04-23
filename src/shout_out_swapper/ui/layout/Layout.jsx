@@ -262,11 +262,17 @@ export function Layout({ routeType = 'main-dashboard' }) {
         }
       }
 
-      // Save shoutout with all cached data - no FK, just flat
-      // Use default schedule if schedules array is empty or undefined
-      const schedules = (data.schedules && data.schedules.length > 0)
-        ? data.schedules
-        : [{ date: modalDate, fictionId: filterFictionId }];
+      // Save shoutout with all cached data - no FK, just flat.
+      // On CREATE, if schedules weren't supplied default to the modal's
+      // date+fiction. On EDIT, trust whatever the user submitted — an
+      // empty array means they explicitly removed every schedule to
+      // unschedule the shoutout.
+      const isEdit = !!data.id;
+      const schedules = isEdit
+        ? (data.schedules || [])
+        : (data.schedules && data.schedules.length > 0
+            ? data.schedules
+            : [{ date: modalDate, fictionId: filterFictionId }]);
 
       const shoutoutData = {
         id: data.id,
