@@ -54,7 +54,9 @@ function getSwapIconClass(shoutout, isChecking = false) {
 export function CalendarCard({ shoutout, onClick, isArchived = false, checkState = null, sourceDate = null }) {
   const isChecking = checkState?.status === 'checking';
   const swapIcon = getSwapIconClass(shoutout, isChecking);
-  const cardClass = `rr-swap-card${isArchived ? ' rr-archived' : ''}${isChecking ? ' rr-checking' : ''}`;
+  // Use RR's `card` class so the card picks up the host site's light/dark
+  // theme automatically instead of hardcoding a background colour.
+  const cardClass = `card rr-swap-card${isArchived ? ' rr-archived' : ''}${isChecking ? ' rr-checking' : ''}`;
 
   return (
     <div

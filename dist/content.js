@@ -827,7 +827,7 @@
   function CalendarCard({ shoutout, onClick, isArchived = false, checkState = null, sourceDate = null }) {
     const isChecking = checkState?.status === "checking";
     const swapIcon = getSwapIconClass(shoutout, isChecking);
-    const cardClass = `rr-swap-card${isArchived ? " rr-archived" : ""}${isChecking ? " rr-checking" : ""}`;
+    const cardClass = `card rr-swap-card${isArchived ? " rr-archived" : ""}${isChecking ? " rr-checking" : ""}`;
     return /* @__PURE__ */ u4(
       "div",
       {
@@ -38668,7 +38668,7 @@
           isOpen,
           onClose,
           title: "Settings",
-          className: "rr-modal-small",
+          className: "rr-modal-settings",
           footer,
           children: /* @__PURE__ */ u4("div", { class: "rr-settings-form", children: [
             /* @__PURE__ */ u4("div", { class: "rr-settings-group", children: [
@@ -39863,6 +39863,12 @@
       if (input?.value)
         return String(input.value);
     }
+    const breadcrumbLink = document.querySelector(
+      'a[href*="/author-dashboard/dashboard/"], a[href*="/author-dashboard/chapters/list/"]'
+    );
+    const breadcrumbMatch = breadcrumbLink?.getAttribute("href")?.match(/\/(?:dashboard|chapters\/list)\/(\d+)/);
+    if (breadcrumbMatch)
+      return breadcrumbMatch[1];
     const link = document.querySelector('a[href*="/fiction/"]');
     const linkMatch = link?.getAttribute("href")?.match(/\/fiction\/(\d+)/);
     if (linkMatch)
@@ -39871,6 +39877,15 @@
     if (dataEl)
       return dataEl.getAttribute("data-fiction-id");
     return null;
+  }
+  function matchFictionFromHeading(myFictions) {
+    if (!myFictions?.length)
+      return null;
+    const heading = document.querySelector("h5.font-weight-bold, h5.text-dark, h1, h2, h3")?.textContent?.trim() || "";
+    if (!heading)
+      return null;
+    const candidates = myFictions.filter((f5) => f5.title && heading.includes(f5.title)).sort((a4, b3) => (b3.title?.length || 0) - (a4.title?.length || 0));
+    return candidates[0] ? String(candidates[0].fictionId) : null;
   }
   function TodayBanner() {
     const [minimized, setMinimized] = d3(() => getSetting("bannerMinimized") || false);
@@ -39887,7 +39902,16 @@
     const [modalDate, setModalDate] = d3(null);
     const [modalMode, setModalMode] = d3("edit");
     const today = getToday();
-    const fictionId = extractFictionIdFromPath();
+    const [fictionId, setFictionId] = d3(() => extractFictionIdFromPath());
+    y2(() => {
+      if (fictionId || !myFictions?.length)
+        return;
+      const fromHeading = matchFictionFromHeading(myFictions);
+      if (fromHeading) {
+        logger17.info("Fiction id resolved from heading title match", { fictionId: fromHeading });
+        setFictionId(fromHeading);
+      }
+    }, [myFictions, fictionId]);
     y2(() => {
       loadData();
       const checkScheduledDate = () => {
@@ -39916,7 +39940,7 @@
       if (!loading) {
         loadData();
       }
-    }, [targetDate]);
+    }, [targetDate, fictionId]);
     const loadData = async () => {
       try {
         const [shoutouts, fictions] = await Promise.all([
@@ -40304,72 +40328,85 @@
             )
           ] })
         ] }),
-        !minimized && todayShoutouts.length > 0 && /* @__PURE__ */ u4("div", { class: "rr-today-banner-shoutouts", children: todayShoutouts.map((shoutout) => /* @__PURE__ */ u4("div", { class: "rr-today-banner-shoutout", "data-shoutout-id": shoutout.id, children: [
-          /* @__PURE__ */ u4("div", { class: "rr-today-banner-book", children: [
-            /* @__PURE__ */ u4("div", { class: "rr-today-banner-book-spine" }),
-            shoutout.coverUrl ? /* @__PURE__ */ u4(
-              "img",
-              {
-                src: shoutout.coverUrl,
-                class: "rr-today-banner-cover",
-                alt: shoutout.fictionTitle || "Cover"
-              }
-            ) : /* @__PURE__ */ u4("div", { class: "rr-today-banner-cover rr-today-banner-cover-placeholder", children: /* @__PURE__ */ u4("i", { class: "fa fa-book" }) })
-          ] }),
-          /* @__PURE__ */ u4("div", { class: "rr-today-banner-info", children: [
-            /* @__PURE__ */ u4("div", { class: "rr-today-banner-title", children: shoutout.fictionTitle || "Unknown Fiction" }),
-            /* @__PURE__ */ u4("div", { class: "rr-today-banner-author", children: [
-              "by ",
-              shoutout.authorName || "Unknown Author"
+        !minimized && todayShoutouts.length > 0 && /* @__PURE__ */ u4("div", { class: "rr-today-banner-shoutouts", children: todayShoutouts.map((shoutout) => {
+          const scheduleFictionIds = (shoutout.schedules || []).filter((s4) => s4.date === targetDate).map((s4) => String(s4.fictionId)).filter(Boolean);
+          const uniqueScheduleFictionIds = [...new Set(scheduleFictionIds)];
+          const ourFictionLabels = uniqueScheduleFictionIds.map((id) => {
+            const f5 = myFictions.find((x3) => String(x3.fictionId) === id);
+            return f5?.title || `Fiction #${id}`;
+          });
+          return /* @__PURE__ */ u4("div", { class: "rr-today-banner-shoutout", "data-shoutout-id": shoutout.id, children: [
+            /* @__PURE__ */ u4("div", { class: "rr-today-banner-book", children: [
+              /* @__PURE__ */ u4("div", { class: "rr-today-banner-book-spine" }),
+              shoutout.coverUrl ? /* @__PURE__ */ u4(
+                "img",
+                {
+                  src: shoutout.coverUrl,
+                  class: "rr-today-banner-cover",
+                  alt: shoutout.fictionTitle || "Cover"
+                }
+              ) : /* @__PURE__ */ u4("div", { class: "rr-today-banner-cover rr-today-banner-cover-placeholder", children: /* @__PURE__ */ u4("i", { class: "fa fa-book" }) })
+            ] }),
+            /* @__PURE__ */ u4("div", { class: "rr-today-banner-info", children: [
+              /* @__PURE__ */ u4("div", { class: "rr-today-banner-title", children: shoutout.fictionTitle || "Unknown Fiction" }),
+              /* @__PURE__ */ u4("div", { class: "rr-today-banner-author", children: [
+                "by ",
+                shoutout.authorName || "Unknown Author"
+              ] }),
+              ourFictionLabels.length > 0 && /* @__PURE__ */ u4("div", { class: "rr-today-banner-for", title: "Scheduled for this fiction of yours", children: [
+                /* @__PURE__ */ u4("i", { class: "fa fa-exchange-alt" }),
+                " for ",
+                ourFictionLabels.join(", ")
+              ] })
+            ] }),
+            /* @__PURE__ */ u4("div", { class: "rr-today-banner-actions", children: [
+              /* @__PURE__ */ u4(
+                "button",
+                {
+                  class: "btn btn-sm btn-light rr-banner-edit",
+                  title: "Edit Shoutout",
+                  onClick: () => handleShoutoutClick(shoutout, targetDate, "edit"),
+                  children: /* @__PURE__ */ u4("i", { class: "fa fa-edit" })
+                }
+              ),
+              /* @__PURE__ */ u4(
+                "button",
+                {
+                  class: `btn btn-sm btn-light rr-banner-copy ${copiedId === shoutout.id ? "btn-success" : ""}`,
+                  title: "Copy Code to Clipboard",
+                  onClick: () => copyToClipboard(shoutout),
+                  children: /* @__PURE__ */ u4("i", { class: `fa ${copiedId === shoutout.id ? "fa-check" : "fa-copy"}` })
+                }
+              ),
+              /* @__PURE__ */ u4(
+                "button",
+                {
+                  class: "btn btn-sm btn-light-primary rr-banner-insert-pre",
+                  title: "Insert to Pre-Chapter Author Note",
+                  onClick: () => insertShoutout(shoutout, "pre"),
+                  disabled: insertingId === shoutout.id,
+                  children: insertingId === shoutout.id ? /* @__PURE__ */ u4("i", { class: "fa fa-spinner fa-spin" }) : /* @__PURE__ */ u4(S, { children: [
+                    /* @__PURE__ */ u4("i", { class: "fa fa-arrow-up" }),
+                    /* @__PURE__ */ u4("span", { children: "Pre" })
+                  ] })
+                }
+              ),
+              /* @__PURE__ */ u4(
+                "button",
+                {
+                  class: "btn btn-sm btn-light-primary rr-banner-insert-post",
+                  title: "Insert to Post-Chapter Author Note",
+                  onClick: () => insertShoutout(shoutout, "post"),
+                  disabled: insertingId === shoutout.id,
+                  children: insertingId === shoutout.id ? /* @__PURE__ */ u4("i", { class: "fa fa-spinner fa-spin" }) : /* @__PURE__ */ u4(S, { children: [
+                    /* @__PURE__ */ u4("i", { class: "fa fa-arrow-down" }),
+                    /* @__PURE__ */ u4("span", { children: "Post" })
+                  ] })
+                }
+              )
             ] })
-          ] }),
-          /* @__PURE__ */ u4("div", { class: "rr-today-banner-actions", children: [
-            /* @__PURE__ */ u4(
-              "button",
-              {
-                class: "btn btn-sm btn-light rr-banner-edit",
-                title: "Edit Shoutout",
-                onClick: () => handleShoutoutClick(shoutout, targetDate, "edit"),
-                children: /* @__PURE__ */ u4("i", { class: "fa fa-edit" })
-              }
-            ),
-            /* @__PURE__ */ u4(
-              "button",
-              {
-                class: `btn btn-sm btn-light rr-banner-copy ${copiedId === shoutout.id ? "btn-success" : ""}`,
-                title: "Copy Code to Clipboard",
-                onClick: () => copyToClipboard(shoutout),
-                children: /* @__PURE__ */ u4("i", { class: `fa ${copiedId === shoutout.id ? "fa-check" : "fa-copy"}` })
-              }
-            ),
-            /* @__PURE__ */ u4(
-              "button",
-              {
-                class: "btn btn-sm btn-light-primary rr-banner-insert-pre",
-                title: "Insert to Pre-Chapter Author Note",
-                onClick: () => insertShoutout(shoutout, "pre"),
-                disabled: insertingId === shoutout.id,
-                children: insertingId === shoutout.id ? /* @__PURE__ */ u4("i", { class: "fa fa-spinner fa-spin" }) : /* @__PURE__ */ u4(S, { children: [
-                  /* @__PURE__ */ u4("i", { class: "fa fa-arrow-up" }),
-                  /* @__PURE__ */ u4("span", { children: "Pre" })
-                ] })
-              }
-            ),
-            /* @__PURE__ */ u4(
-              "button",
-              {
-                class: "btn btn-sm btn-light-primary rr-banner-insert-post",
-                title: "Insert to Post-Chapter Author Note",
-                onClick: () => insertShoutout(shoutout, "post"),
-                disabled: insertingId === shoutout.id,
-                children: insertingId === shoutout.id ? /* @__PURE__ */ u4("i", { class: "fa fa-spinner fa-spin" }) : /* @__PURE__ */ u4(S, { children: [
-                  /* @__PURE__ */ u4("i", { class: "fa fa-arrow-down" }),
-                  /* @__PURE__ */ u4("span", { children: "Post" })
-                ] })
-              }
-            )
-          ] })
-        ] }, shoutout.id)) })
+          ] }, shoutout.id);
+        }) })
       ] }) }),
       /* @__PURE__ */ u4(Overlay, { isOpen: calendarOpen, onClose: () => setCalendarOpen(false), children: /* @__PURE__ */ u4("div", { class: "rr-calendar-overlay card card-custom", children: [
         /* @__PURE__ */ u4("div", { class: "card-header", children: [
@@ -41256,6 +41293,19 @@
   max-width: 1100px;
 }
 
+/* Settings: wider than small, with its body constrained so long option
+   lists scroll instead of overflowing the viewport. */
+.rr-modal-settings {
+  width: 95%;
+  max-width: 600px;
+  max-height: 85vh;
+}
+
+.rr-modal-settings .rr-modal-body {
+  max-height: calc(85vh - 8rem); /* leave room for header + footer */
+  overflow-y: auto;
+}
+
 /* Header */
 .rr-modal-header {
   flex-shrink: 0;
@@ -41452,16 +41502,16 @@
   display: flex;
   align-items: center;
   flex: 1;
-  position: relative;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .rr-cal-nav-center {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
+  margin: 0 auto;
+  min-width: 0;
 }
 
 .rr-cal-nav-right {
@@ -41469,6 +41519,22 @@
   align-items: center;
   gap: 0.5rem;
   margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* At narrow viewport widths the right-side buttons drop to their own row
+   so the month-year title and its arrows never get overlapped. */
+@media (max-width: 900px) {
+  .rr-cal-nav-center {
+    order: -1;
+    width: 100%;
+    margin: 0;
+    justify-content: center;
+  }
+  .rr-cal-nav-right {
+    margin-left: auto;
+    margin-right: auto;
+  }
 }
 
 .rr-cal-nav {
@@ -41694,14 +41760,20 @@
   font-weight: 600;
 }
 
+/* Past day: dim the whole cell's background so "past" is unmistakable,
+   but leave shoutout cards inside at full contrast so titles stay legible.
+   Day number also muted as a secondary signal. */
 .rr-day-past {
-  opacity: 0.5;
-  background: rgba(128, 128, 128, 0.05);
+  background: rgba(128, 128, 128, 0.2);
   cursor: default;
 }
 
+.rr-day-past .rr-day-number {
+  opacity: 0.45;
+}
+
 .rr-day-past:hover {
-  background: rgba(128, 128, 128, 0.05);
+  background: rgba(128, 128, 128, 0.2);
 }
 
 .rr-day-events {
@@ -41716,7 +41788,6 @@
 
 .rr-day-events .rr-swap-card {
   position: relative;
-  background: var(--rr-card-bg, #2b2b2b) !important;
   opacity: 1 !important;
 }
 
@@ -42526,12 +42597,13 @@
 .rr-day-stack-date {
   font-weight: 600;
   font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.95);
 }
 
 .rr-day-stack-hint {
   flex: 1;
-  font-size: 0.7rem;
-  opacity: 0.5;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.7);
   text-align: right;
 }
 
@@ -42605,7 +42677,277 @@
 `;
 
   // src/shout_out_swapper/ui/calendar/CalendarCard.css
-  var CalendarCard_default = "/* Swap card - matches v1's .rr-swap-card structure */\n.rr-swap-card,\n.rr-day-events .rr-swap-card,\n.rr-calendar .rr-swap-card {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  padding: 0.2rem;\n  border: 1px solid rgba(100, 100, 100, 0.5) !important;\n  border-radius: 4px;\n  cursor: grab;\n  transition: transform 0.15s, box-shadow 0.15s;\n  background-color: #252525 !important;\n  width: 80px;\n  text-align: center;\n  position: relative;\n  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);\n}\n\n.rr-swap-card:hover {\n  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);\n}\n\n.rr-swap-card:active {\n  cursor: grabbing;\n}\n\n/* Archived cards */\n.rr-swap-card.rr-archived {\n  cursor: pointer;\n  opacity: 0.5;\n  filter: grayscale(50%);\n}\n\n.rr-swap-card.rr-archived:hover {\n  opacity: 0.7;\n  box-shadow: none;\n  transform: none;\n}\n\n/* Cover */\n.rr-swap-card-cover {\n  width: 50px;\n  height: 70px;\n  flex-shrink: 0;\n  border-radius: 3px;\n  overflow: hidden;\n  margin-bottom: 0.15rem;\n  cursor: pointer;\n  transition: opacity 0.15s;\n}\n\n.rr-swap-card-cover:hover {\n  opacity: 0.8;\n}\n\n.rr-swap-card-cover img {\n  width: 100%;\n  height: 100%;\n  object-fit: cover;\n}\n\n.rr-swap-card-placeholder {\n  width: 100%;\n  height: 100%;\n  background: rgba(128, 128, 128, 0.2);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-weight: 600;\n  font-size: 1rem;\n}\n\n/* Title */\n.rr-swap-card-title {\n  font-size: 0.65rem;\n  font-weight: 600;\n  color: #337ab7;\n  cursor: pointer;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  max-width: 100%;\n  display: block;\n  line-height: 1.2;\n}\n\n.rr-swap-card-title:hover {\n  text-decoration: underline;\n  color: #23527c;\n}\n\n/* Author */\n.rr-swap-card-author {\n  font-size: 0.6rem;\n  color: inherit;\n  opacity: 0.7;\n  cursor: pointer;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  gap: 0.2rem;\n  max-width: 100%;\n  margin-top: 0.15rem;\n}\n\n.rr-swap-card-author i {\n  font-size: 0.5rem;\n  flex-shrink: 0;\n}\n\n.rr-swap-card-author:hover {\n  opacity: 1;\n  color: #337ab7;\n}\n\n/* Status icon */\n.rr-swap-icon {\n  position: absolute;\n  top: 2px;\n  right: 2px;\n  font-size: 1rem;\n  z-index: 5;\n  opacity: 0.95;\n}\n\n/* We posted their shoutout (green check) */\n.rr-swap-icon-swapped {\n  color: #fff;\n  background: #27ae60;\n  border-radius: 50%;\n  width: 1.1em;\n  height: 1.1em;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.rr-swap-icon-swapped i {\n  font-size: 0.65em;\n}\n\n/* Swap complete - both parties posted (retweet icon) */\n.rr-swap-icon-returned {\n  color: #fff;\n  background: #17a2b8;\n  border-radius: 50%;\n  width: 1.1em;\n  height: 1.1em;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.rr-swap-icon-returned i {\n  font-size: 0.65em;\n}\n\n.rr-swap-icon-notscanned {\n  color: #888;\n  opacity: 0.8;\n}\n\n/* We posted, scanned, they didn't return */\n.rr-swap-icon-notfound {\n  color: #e74c3c;\n}\n\n/* Scheduled but not posted yet - orange clock */\n.rr-swap-icon-scheduled {\n  color: #e67e22;\n}\n\n/* They shouted us first - speech bubble */\n.rr-swap-icon-shouted {\n  color: #17a2b8;\n  background: rgba(23, 162, 184, 0.15);\n  border-radius: 50%;\n  width: 1.1em;\n  height: 1.1em;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.rr-swap-icon-shouted i {\n  font-size: 0.65em;\n}\n\n.rr-swap-icon-checking {\n  color: #17a2b8;\n}\n\n/* Checking state */\n.rr-swap-card.rr-checking {\n  border-color: #17a2b8 !important;\n}\n\n/* Progress bar on card */\n.rr-card-progress {\n  position: absolute;\n  bottom: 0;\n  left: 0;\n  right: 0;\n  height: 3px;\n  background: rgba(128, 128, 128, 0.3);\n  border-radius: 0 0 4px 4px;\n  overflow: hidden;\n}\n\n.rr-card-progress-bar {\n  height: 100%;\n  background: #17a2b8;\n  transition: width 0.3s ease;\n}\n\n/* Dragging state */\n.rr-swap-card.rr-dragging {\n  opacity: 0.5;\n}\n\n/* Responsive */\n@media (max-width: 1200px) {\n  .rr-swap-card {\n    width: 70px;\n  }\n  .rr-swap-card-cover {\n    width: 45px;\n    height: 62px;\n  }\n}\n\n@media (max-width: 900px) {\n  .rr-swap-card {\n    width: 60px;\n    padding: 0.15rem;\n  }\n  .rr-swap-card-cover {\n    width: 38px;\n    height: 52px;\n  }\n  .rr-swap-card-title {\n    font-size: 0.55rem;\n  }\n  .rr-swap-card-author {\n    font-size: 0.5rem;\n  }\n  .rr-swap-icon {\n    font-size: 0.8rem;\n  }\n}\n\n@media (max-width: 600px) {\n  .rr-swap-card {\n    width: 50px;\n    padding: 0.1rem;\n  }\n  .rr-swap-card-cover {\n    width: 32px;\n    height: 44px;\n  }\n  .rr-swap-card-title,\n  .rr-swap-card-author {\n    font-size: 0.45rem;\n  }\n  .rr-swap-icon {\n    font-size: 0.7rem;\n  }\n}\n";
+  var CalendarCard_default = `/* Swap card - matches v1's .rr-swap-card structure. Background and text
+   color are left to RR's .card class (applied in the JSX) so the card
+   inherits RR's current light/dark theme instead of hardcoding. */
+.rr-swap-card,
+.rr-day-events .rr-swap-card,
+.rr-calendar .rr-swap-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.2rem;
+  border-radius: 4px;
+  cursor: grab;
+  transition: transform 0.15s, box-shadow 0.15s;
+  width: 80px;
+  text-align: center;
+  position: relative;
+}
+
+.rr-swap-card:hover {
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+}
+
+.rr-swap-card:active {
+  cursor: grabbing;
+}
+
+/* Archived cards \u2014 stay full-contrast and readable. The "archived" signal
+   is communicated via the day-number dimming on past dates, not by greying
+   out the card itself. */
+.rr-swap-card.rr-archived {
+  cursor: pointer;
+}
+
+.rr-swap-card.rr-archived:hover {
+  box-shadow: none;
+  transform: none;
+}
+
+/* Cover */
+.rr-swap-card-cover {
+  width: 50px;
+  height: 70px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 0.15rem;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.rr-swap-card-cover:hover {
+  opacity: 0.8;
+}
+
+.rr-swap-card-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.rr-swap-card-placeholder {
+  width: 100%;
+  height: 100%;
+  background: rgba(128, 128, 128, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+/* Title */
+.rr-swap-card-title {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #337ab7;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  display: block;
+  line-height: 1.2;
+}
+
+.rr-swap-card-title:hover {
+  text-decoration: underline;
+  color: #23527c;
+}
+
+/* Author */
+.rr-swap-card-author {
+  font-size: 0.6rem;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  max-width: 100%;
+  margin-top: 0.15rem;
+}
+
+.rr-swap-card-author i {
+  font-size: 0.5rem;
+  flex-shrink: 0;
+}
+
+.rr-swap-card-author:hover {
+  opacity: 1;
+  color: #337ab7;
+}
+
+/* Status icon */
+.rr-swap-icon {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 1rem;
+  z-index: 5;
+  opacity: 0.95;
+}
+
+/* We posted their shoutout (green check) */
+.rr-swap-icon-swapped {
+  color: #fff;
+  background: #27ae60;
+  border-radius: 50%;
+  width: 1.1em;
+  height: 1.1em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rr-swap-icon-swapped i {
+  font-size: 0.65em;
+}
+
+/* Swap complete - both parties posted (retweet icon) */
+.rr-swap-icon-returned {
+  color: #fff;
+  background: #17a2b8;
+  border-radius: 50%;
+  width: 1.1em;
+  height: 1.1em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rr-swap-icon-returned i {
+  font-size: 0.65em;
+}
+
+.rr-swap-icon-notscanned {
+  color: #888;
+  opacity: 0.8;
+}
+
+/* We posted, scanned, they didn't return */
+.rr-swap-icon-notfound {
+  color: #e74c3c;
+}
+
+/* Scheduled but not posted yet - orange clock */
+.rr-swap-icon-scheduled {
+  color: #e67e22;
+}
+
+/* They shouted us first - speech bubble */
+.rr-swap-icon-shouted {
+  color: #17a2b8;
+  background: rgba(23, 162, 184, 0.15);
+  border-radius: 50%;
+  width: 1.1em;
+  height: 1.1em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rr-swap-icon-shouted i {
+  font-size: 0.65em;
+}
+
+.rr-swap-icon-checking {
+  color: #17a2b8;
+}
+
+/* Checking state */
+.rr-swap-card.rr-checking {
+  border-color: #17a2b8 !important;
+}
+
+/* Progress bar on card */
+.rr-card-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(128, 128, 128, 0.3);
+  border-radius: 0 0 4px 4px;
+  overflow: hidden;
+}
+
+.rr-card-progress-bar {
+  height: 100%;
+  background: #17a2b8;
+  transition: width 0.3s ease;
+}
+
+/* Dragging state */
+.rr-swap-card.rr-dragging {
+  opacity: 0.5;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .rr-swap-card {
+    width: 70px;
+  }
+  .rr-swap-card-cover {
+    width: 45px;
+    height: 62px;
+  }
+}
+
+@media (max-width: 900px) {
+  .rr-swap-card {
+    width: 60px;
+    padding: 0.15rem;
+  }
+  .rr-swap-card-cover {
+    width: 38px;
+    height: 52px;
+  }
+  .rr-swap-card-title {
+    font-size: 0.55rem;
+  }
+  .rr-swap-card-author {
+    font-size: 0.5rem;
+  }
+  .rr-swap-icon {
+    font-size: 0.8rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .rr-swap-card {
+    width: 50px;
+    padding: 0.1rem;
+  }
+  .rr-swap-card-cover {
+    width: 32px;
+    height: 44px;
+  }
+  .rr-swap-card-title,
+  .rr-swap-card-author {
+    font-size: 0.45rem;
+  }
+  .rr-swap-icon {
+    font-size: 0.7rem;
+  }
+}
+`;
 
   // src/shout_out_swapper/ui/calendar/DropMenu.css
   var DropMenu_default = "/* Drop conflict menu */\n.rr-drop-menu {\n  background: var(--rr-card-bg, #1e1e2d);\n  border: 1px solid rgba(128, 128, 128, 0.3);\n  border-radius: 8px;\n  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);\n  min-width: 200px;\n  z-index: 10000;\n  overflow: hidden;\n}\n\n.rr-drop-menu-title {\n  padding: 0.75rem 1rem;\n  font-size: 0.8rem;\n  font-weight: 600;\n  color: rgba(255, 255, 255, 0.6);\n  border-bottom: 1px solid rgba(128, 128, 128, 0.2);\n}\n\n.rr-drop-menu-item {\n  display: flex;\n  align-items: center;\n  gap: 0.75rem;\n  width: 100%;\n  padding: 0.75rem 1rem;\n  background: transparent;\n  border: none;\n  color: inherit;\n  text-align: left;\n  cursor: pointer;\n  transition: background 0.15s;\n}\n\n.rr-drop-menu-item:hover {\n  background: rgba(51, 122, 183, 0.2);\n}\n\n.rr-drop-menu-item i {\n  width: 16px;\n  text-align: center;\n  color: #337ab7;\n}\n\n.rr-drop-menu-label {\n  font-weight: 500;\n  flex-shrink: 0;\n}\n\n.rr-drop-menu-desc {\n  font-size: 0.75rem;\n  color: rgba(128, 128, 128, 0.7);\n  margin-left: auto;\n}\n\n.rr-drop-menu-cancel {\n  border-top: 1px solid rgba(128, 128, 128, 0.2);\n  justify-content: center;\n  color: rgba(128, 128, 128, 0.7);\n}\n\n.rr-drop-menu-cancel:hover {\n  background: rgba(128, 128, 128, 0.1);\n  color: inherit;\n}\n";
@@ -42629,7 +42971,7 @@
   var SettingsModal_default = '/* Settings Modal Styles */\n\n.rr-settings-form {\n  display: flex;\n  flex-direction: column;\n  gap: 1.25rem;\n}\n\n.rr-settings-group {\n  display: flex;\n  flex-direction: column;\n  gap: 0.25rem;\n}\n\n.rr-settings-label {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  font-weight: 500;\n  cursor: pointer;\n}\n\n.rr-settings-label input[type="checkbox"],\n.rr-settings-label input[type="radio"] {\n  margin: 0;\n}\n\n.rr-settings-label-disabled {\n  opacity: 0.6;\n  cursor: not-allowed;\n}\n\n.rr-settings-description {\n  margin: 0;\n  margin-left: 1.5rem;\n  font-size: 0.85rem;\n  color: rgba(128, 128, 128, 0.8);\n}\n\n.rr-settings-options {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  margin-left: 0.5rem;\n  margin-top: 0.5rem;\n}\n\n.rr-settings-radio {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  cursor: pointer;\n}\n\n.rr-settings-badge {\n  font-size: 0.7rem;\n  padding: 0.15rem 0.4rem;\n  background: rgba(128, 128, 128, 0.2);\n  border-radius: 4px;\n  margin-left: 0.5rem;\n}\n\n.rr-settings-danger {\n  padding-top: 1rem;\n  border-top: 1px solid rgba(128, 128, 128, 0.2);\n}\n\n.rr-settings-danger .rr-settings-label {\n  color: #dc3545;\n}\n\n.rr-settings-danger .rr-settings-description {\n  margin-left: 0;\n}\n';
 
   // src/shout_out_swapper/ui/banner/TodayBanner.css
-  var TodayBanner_default = "/* Today Banner - Chapter edit page shoutout reminder */\n\n.rr-today-banner {\n  margin-bottom: 1.5rem;\n}\n\n.rr-today-banner-content {\n  padding: 0;\n}\n\n/* Header */\n.rr-today-banner-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 0.75rem 1rem;\n  background: rgba(128, 128, 128, 0.05);\n  border-bottom: 1px solid rgba(128, 128, 128, 0.1);\n}\n\n.rr-today-banner-has-shoutout .rr-today-banner-header {\n  background: linear-gradient(135deg, rgba(51, 122, 183, 0.1) 0%, rgba(51, 122, 183, 0.05) 100%);\n  border-bottom-color: rgba(51, 122, 183, 0.2);\n}\n\n.rr-today-banner-header-left {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  font-weight: 600;\n  font-size: 0.95rem;\n}\n\n.rr-today-banner-header-left i {\n  color: #337ab7;\n  font-size: 1rem;\n}\n\n.rr-today-banner-header-actions {\n  display: flex;\n  gap: 0.25rem;\n}\n\n/* Shoutouts container */\n.rr-today-banner-shoutouts {\n  padding: 1rem;\n  display: flex;\n  flex-direction: column;\n  gap: 0.75rem;\n}\n\n/* Individual shoutout row */\n.rr-today-banner-shoutout {\n  display: flex;\n  align-items: center;\n  gap: 1rem;\n  padding: 0.75rem;\n  background: rgba(128, 128, 128, 0.03);\n  border: 1px solid rgba(128, 128, 128, 0.1);\n  border-radius: 8px;\n  transition: all 0.15s;\n}\n\n.rr-today-banner-shoutout:hover {\n  background: rgba(128, 128, 128, 0.06);\n  border-color: rgba(128, 128, 128, 0.2);\n}\n\n/* Book with spine effect */\n.rr-today-banner-book {\n  position: relative;\n  flex-shrink: 0;\n  perspective: 200px;\n}\n\n.rr-today-banner-book-spine {\n  position: absolute;\n  left: -6px;\n  top: 0;\n  bottom: 0;\n  width: 8px;\n  background: linear-gradient(90deg,\n    rgba(0, 0, 0, 0.3) 0%,\n    rgba(0, 0, 0, 0.1) 30%,\n    rgba(255, 255, 255, 0.1) 50%,\n    rgba(0, 0, 0, 0.1) 70%,\n    rgba(0, 0, 0, 0.2) 100%\n  );\n  border-radius: 2px 0 0 2px;\n  transform: rotateY(-20deg);\n  transform-origin: right center;\n}\n\n.rr-today-banner-cover {\n  width: 55px;\n  height: 75px;\n  object-fit: cover;\n  border-radius: 2px;\n  box-shadow:\n    2px 2px 8px rgba(0, 0, 0, 0.15),\n    0 0 1px rgba(0, 0, 0, 0.1);\n}\n\n.rr-today-banner-cover-placeholder {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  background: rgba(128, 128, 128, 0.1);\n  color: rgba(128, 128, 128, 0.4);\n  font-size: 1.5rem;\n}\n\n/* Info section */\n.rr-today-banner-info {\n  flex: 1;\n  min-width: 0;\n  padding-left: 0.25rem;\n}\n\n.rr-today-banner-title {\n  font-weight: 600;\n  font-size: 0.95rem;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.rr-today-banner-author {\n  font-size: 0.85rem;\n  opacity: 0.7;\n  margin-top: 0.15rem;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n/* Action buttons */\n.rr-today-banner-actions {\n  display: flex;\n  gap: 0.5rem;\n  flex-shrink: 0;\n}\n\n.rr-today-banner-actions .btn {\n  display: flex;\n  align-items: center;\n  gap: 0.35rem;\n  padding: 0.5rem 0.75rem;\n  font-size: 0.85rem;\n  white-space: nowrap;\n}\n\n.rr-today-banner-actions .btn i {\n  font-size: 0.8rem;\n}\n\n/* Insert button styles */\n.rr-banner-insert-pre,\n.rr-banner-insert-post {\n  background: rgba(51, 122, 183, 0.1);\n  border: 1px solid rgba(51, 122, 183, 0.2);\n  color: #337ab7;\n}\n\n.rr-banner-insert-pre:hover,\n.rr-banner-insert-post:hover {\n  background: rgba(51, 122, 183, 0.2);\n  border-color: rgba(51, 122, 183, 0.3);\n}\n\n.rr-banner-insert-pre:disabled,\n.rr-banner-insert-post:disabled {\n  opacity: 0.6;\n  cursor: not-allowed;\n}\n\n/* Calendar Overlay */\n.rr-calendar-overlay {\n  width: 900px;\n  max-width: 95vw;\n  max-height: 90vh;\n  overflow: auto;\n  background: var(--rr-card-bg, #1e1e2d);\n}\n\n.rr-calendar-overlay .card-header {\n  position: sticky;\n  top: 0;\n  z-index: 10;\n  background: inherit;\n}\n\n.rr-calendar-overlay .card-body {\n  padding: 1rem;\n}\n\n/* Hide unscheduled section in overlay */\n.rr-calendar-overlay .rr-unscheduled-toggle {\n  display: none;\n}\n\n/* Responsive */\n@media (max-width: 576px) {\n  .rr-today-banner-shoutout {\n    flex-wrap: wrap;\n  }\n\n  .rr-today-banner-info {\n    flex: 1 1 calc(100% - 80px);\n  }\n\n  .rr-today-banner-actions {\n    width: 100%;\n    justify-content: flex-end;\n    margin-top: 0.5rem;\n  }\n\n  .rr-calendar-overlay {\n    width: 100%;\n  }\n}\n";
+  var TodayBanner_default = "/* Today Banner - Chapter edit page shoutout reminder */\n\n.rr-today-banner {\n  margin-bottom: 1.5rem;\n}\n\n.rr-today-banner-content {\n  padding: 0;\n}\n\n/* Header */\n.rr-today-banner-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 0.75rem 1rem;\n  background: rgba(128, 128, 128, 0.05);\n  border-bottom: 1px solid rgba(128, 128, 128, 0.1);\n}\n\n.rr-today-banner-has-shoutout .rr-today-banner-header {\n  background: linear-gradient(135deg, rgba(51, 122, 183, 0.1) 0%, rgba(51, 122, 183, 0.05) 100%);\n  border-bottom-color: rgba(51, 122, 183, 0.2);\n}\n\n.rr-today-banner-header-left {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  font-weight: 600;\n  font-size: 0.95rem;\n}\n\n.rr-today-banner-header-left i {\n  color: #337ab7;\n  font-size: 1rem;\n}\n\n.rr-today-banner-header-actions {\n  display: flex;\n  gap: 0.25rem;\n}\n\n/* Shoutouts container */\n.rr-today-banner-shoutouts {\n  padding: 1rem;\n  display: flex;\n  flex-direction: column;\n  gap: 0.75rem;\n}\n\n/* Individual shoutout row */\n.rr-today-banner-shoutout {\n  display: flex;\n  align-items: center;\n  gap: 1rem;\n  padding: 0.75rem;\n  background: rgba(128, 128, 128, 0.03);\n  border: 1px solid rgba(128, 128, 128, 0.1);\n  border-radius: 8px;\n  transition: all 0.15s;\n}\n\n.rr-today-banner-shoutout:hover {\n  background: rgba(128, 128, 128, 0.06);\n  border-color: rgba(128, 128, 128, 0.2);\n}\n\n/* Book with spine effect */\n.rr-today-banner-book {\n  position: relative;\n  flex-shrink: 0;\n  perspective: 200px;\n}\n\n.rr-today-banner-book-spine {\n  position: absolute;\n  left: -6px;\n  top: 0;\n  bottom: 0;\n  width: 8px;\n  background: linear-gradient(90deg,\n    rgba(0, 0, 0, 0.3) 0%,\n    rgba(0, 0, 0, 0.1) 30%,\n    rgba(255, 255, 255, 0.1) 50%,\n    rgba(0, 0, 0, 0.1) 70%,\n    rgba(0, 0, 0, 0.2) 100%\n  );\n  border-radius: 2px 0 0 2px;\n  transform: rotateY(-20deg);\n  transform-origin: right center;\n}\n\n.rr-today-banner-cover {\n  width: 55px;\n  height: 75px;\n  object-fit: cover;\n  border-radius: 2px;\n  box-shadow:\n    2px 2px 8px rgba(0, 0, 0, 0.15),\n    0 0 1px rgba(0, 0, 0, 0.1);\n}\n\n.rr-today-banner-cover-placeholder {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  background: rgba(128, 128, 128, 0.1);\n  color: rgba(128, 128, 128, 0.4);\n  font-size: 1.5rem;\n}\n\n/* Info section */\n.rr-today-banner-info {\n  flex: 1;\n  min-width: 0;\n  padding-left: 0.25rem;\n}\n\n.rr-today-banner-title {\n  font-weight: 600;\n  font-size: 0.95rem;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.rr-today-banner-author {\n  font-size: 0.85rem;\n  opacity: 0.7;\n  margin-top: 0.15rem;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.rr-today-banner-for {\n  display: inline-flex;\n  align-items: center;\n  gap: 0.3rem;\n  margin-top: 0.25rem;\n  padding: 0.1rem 0.4rem;\n  background: rgba(51, 122, 183, 0.15);\n  border-radius: 3px;\n  color: #337ab7;\n  font-size: 0.7rem;\n  font-weight: 500;\n  max-width: 100%;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n/* Action buttons */\n.rr-today-banner-actions {\n  display: flex;\n  gap: 0.5rem;\n  flex-shrink: 0;\n}\n\n.rr-today-banner-actions .btn {\n  display: flex;\n  align-items: center;\n  gap: 0.35rem;\n  padding: 0.5rem 0.75rem;\n  font-size: 0.85rem;\n  white-space: nowrap;\n}\n\n.rr-today-banner-actions .btn i {\n  font-size: 0.8rem;\n}\n\n/* Insert button styles */\n.rr-banner-insert-pre,\n.rr-banner-insert-post {\n  background: rgba(51, 122, 183, 0.1);\n  border: 1px solid rgba(51, 122, 183, 0.2);\n  color: #337ab7;\n}\n\n.rr-banner-insert-pre:hover,\n.rr-banner-insert-post:hover {\n  background: rgba(51, 122, 183, 0.2);\n  border-color: rgba(51, 122, 183, 0.3);\n}\n\n.rr-banner-insert-pre:disabled,\n.rr-banner-insert-post:disabled {\n  opacity: 0.6;\n  cursor: not-allowed;\n}\n\n/* Calendar Overlay */\n.rr-calendar-overlay {\n  width: 900px;\n  max-width: 95vw;\n  max-height: 90vh;\n  overflow: auto;\n  background: var(--rr-card-bg, #1e1e2d);\n}\n\n.rr-calendar-overlay .card-header {\n  position: sticky;\n  top: 0;\n  z-index: 10;\n  background: inherit;\n}\n\n.rr-calendar-overlay .card-body {\n  padding: 1rem;\n}\n\n/* Hide unscheduled section in overlay */\n.rr-calendar-overlay .rr-unscheduled-toggle {\n  display: none;\n}\n\n/* Responsive */\n@media (max-width: 576px) {\n  .rr-today-banner-shoutout {\n    flex-wrap: wrap;\n  }\n\n  .rr-today-banner-info {\n    flex: 1 1 calc(100% - 80px);\n  }\n\n  .rr-today-banner-actions {\n    width: 100%;\n    justify-content: flex-end;\n    margin-top: 0.5rem;\n  }\n\n  .rr-calendar-overlay {\n    width: 100%;\n  }\n}\n";
 
   // src/analytics/followers/Followers.css
   var Followers_default = "/* Follower Analytics - Chart styles only */\n/* Uses Royal Road's native classes for dark/light mode compatibility */\n\n/* Slider tab bar */\n.rr-slider-tabs {\n  display: inline-flex;\n  background: rgba(128, 128, 128, 0.2);\n  border-radius: 4px;\n  padding: 2px;\n}\n\n.rr-slider-tabs .rr-slider-tab {\n  padding: 0.2rem 0.5rem;\n  font-size: 0.75rem;\n  color: inherit;\n  opacity: 0.7;\n  background: transparent;\n  border: none;\n  border-radius: 3px;\n  cursor: pointer;\n  transition: all 0.15s ease;\n  text-decoration: none;\n}\n\n.rr-slider-tabs .rr-slider-tab:hover {\n  opacity: 1;\n}\n\n.rr-slider-tabs .rr-slider-tab.active {\n  background: #337ab7;\n  color: #fff;\n  opacity: 1;\n}\n\n/* Bar chart */\n.rr-chart-container {\n  display: flex;\n  padding: 10px 0;\n  overflow: hidden;\n}\n\n.rr-chart-y-axis {\n  display: flex;\n  flex-direction: column;\n  justify-content: space-between;\n  padding-right: 10px;\n  text-align: right;\n}\n\n.rr-y-label {\n  font-size: 0.75rem;\n  opacity: 0.7;\n  line-height: 1;\n}\n\n.rr-chart-area {\n  flex: 1;\n  display: flex;\n  flex-direction: column;\n  border-left: 1px solid rgba(128, 128, 128, 0.3);\n  overflow: hidden;\n}\n\n.rr-chart-bars-wrapper {\n  flex: 1;\n  position: relative;\n  min-height: 150px;\n  overflow: hidden;\n}\n\n.rr-chart-grid {\n  position: absolute;\n  top: 0;\n  left: 0;\n  right: 0;\n  bottom: 0;\n  display: flex;\n  flex-direction: column;\n  justify-content: space-between;\n  pointer-events: none;\n}\n\n.rr-grid-line {\n  border-top: 1px solid rgba(128, 128, 128, 0.2);\n  width: 100%;\n}\n\n.rr-chart-bars {\n  position: absolute;\n  top: 0;\n  left: 0;\n  right: 0;\n  bottom: 0;\n  display: flex;\n  align-items: flex-end;\n  padding: 0 5px;\n  gap: 3px;\n  border-bottom: 1px solid rgba(128, 128, 128, 0.3);\n}\n\n.rr-bar-group {\n  flex: 1;\n  height: 100%;\n  display: flex;\n  align-items: flex-end;\n  justify-content: center;\n  min-width: 0;\n}\n\n.rr-bar {\n  width: 100%;\n  background: #337ab7;\n  border-radius: 2px 2px 0 0;\n  transition: background 0.15s;\n  cursor: pointer;\n}\n\n.rr-bar:hover {\n  background: #4a9fd4;\n}\n\n.rr-x-labels {\n  display: flex;\n  padding: 0 5px;\n  gap: 3px; /* Must match .rr-chart-bars gap */\n  flex-shrink: 0;\n}\n\n.rr-bar-label {\n  flex: 1;\n  font-size: 0.65rem;\n  opacity: 0.7;\n  text-align: center;\n  padding-top: 4px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n/* Centered bar chart (for +/- values) */\n.rr-chart-bars-centered {\n  align-items: stretch;\n  border-bottom: none;\n}\n\n.rr-bar-group-centered {\n  align-items: stretch;\n  position: relative;\n}\n\n.rr-bar-group-centered .rr-bar {\n  position: absolute;\n  left: 0;\n  right: 0;\n  width: 100%;\n}\n\n.rr-bar-positive {\n  background: #337ab7;\n  border-radius: 2px 2px 0 0;\n}\n\n.rr-bar-positive:hover {\n  background: #4a9fd4;\n}\n\n.rr-bar-negative {\n  background: #d9534f;\n  border-radius: 0 0 2px 2px;\n}\n\n.rr-bar-negative:hover {\n  background: #e57373;\n}\n\n.rr-grid-line-zero {\n  border-top: 2px solid rgba(128, 128, 128, 0.6);\n}\n\n/* Slanted x-axis labels - rotated 60 degrees, allow overlap */\n.rr-x-labels-slanted {\n  overflow: visible;\n  height: 50px;\n}\n\n.rr-x-labels-slanted .rr-bar-label {\n  font-size: 0.7rem;\n  font-weight: 500;\n  opacity: 0.85;\n  overflow: visible;\n  white-space: nowrap;\n  transform: rotate(60deg);\n  transform-origin: top left;\n  padding: 4px 0 0 0;\n  margin: 0 -10px 0 0; /* Negative margin to overlap */\n}\n";

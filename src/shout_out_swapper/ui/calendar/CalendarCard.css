@@ -1,4 +1,6 @@
-/* Swap card - matches v1's .rr-swap-card structure */
+/* Swap card - matches v1's .rr-swap-card structure. Background and text
+   color are left to RR's .card class (applied in the JSX) so the card
+   inherits RR's current light/dark theme instead of hardcoding. */
 .rr-swap-card,
 .rr-day-events .rr-swap-card,
 .rr-calendar .rr-swap-card {
@@ -6,15 +8,12 @@
   flex-direction: column;
   align-items: center;
   padding: 0.2rem;
-  border: 1px solid rgba(100, 100, 100, 0.5) !important;
   border-radius: 4px;
   cursor: grab;
   transition: transform 0.15s, box-shadow 0.15s;
-  background-color: #252525 !important;
   width: 80px;
   text-align: center;
   position: relative;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .rr-swap-card:hover {
@@ -25,15 +24,14 @@
   cursor: grabbing;
 }
 
-/* Archived cards */
+/* Archived cards — stay full-contrast and readable. The "archived" signal
+   is communicated via the day-number dimming on past dates, not by greying
+   out the card itself. */
 .rr-swap-card.rr-archived {
   cursor: pointer;
-  opacity: 0.5;
-  filter: grayscale(50%);
 }
 
 .rr-swap-card.rr-archived:hover {
-  opacity: 0.7;
   box-shadow: none;
   transform: none;
 }

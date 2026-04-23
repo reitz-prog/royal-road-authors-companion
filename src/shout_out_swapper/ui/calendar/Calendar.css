@@ -63,16 +63,16 @@
   display: flex;
   align-items: center;
   flex: 1;
-  position: relative;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .rr-cal-nav-center {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
+  margin: 0 auto;
+  min-width: 0;
 }
 
 .rr-cal-nav-right {
@@ -80,6 +80,22 @@
   align-items: center;
   gap: 0.5rem;
   margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* At narrow viewport widths the right-side buttons drop to their own row
+   so the month-year title and its arrows never get overlapped. */
+@media (max-width: 900px) {
+  .rr-cal-nav-center {
+    order: -1;
+    width: 100%;
+    margin: 0;
+    justify-content: center;
+  }
+  .rr-cal-nav-right {
+    margin-left: auto;
+    margin-right: auto;
+  }
 }
 
 .rr-cal-nav {
@@ -305,14 +321,20 @@
   font-weight: 600;
 }
 
+/* Past day: dim the whole cell's background so "past" is unmistakable,
+   but leave shoutout cards inside at full contrast so titles stay legible.
+   Day number also muted as a secondary signal. */
 .rr-day-past {
-  opacity: 0.5;
-  background: rgba(128, 128, 128, 0.05);
+  background: rgba(128, 128, 128, 0.2);
   cursor: default;
 }
 
+.rr-day-past .rr-day-number {
+  opacity: 0.45;
+}
+
 .rr-day-past:hover {
-  background: rgba(128, 128, 128, 0.05);
+  background: rgba(128, 128, 128, 0.2);
 }
 
 .rr-day-events {
@@ -327,7 +349,6 @@
 
 .rr-day-events .rr-swap-card {
   position: relative;
-  background: var(--rr-card-bg, #2b2b2b) !important;
   opacity: 1 !important;
 }
 
@@ -1137,12 +1158,13 @@
 .rr-day-stack-date {
   font-weight: 600;
   font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.95);
 }
 
 .rr-day-stack-hint {
   flex: 1;
-  font-size: 0.7rem;
-  opacity: 0.5;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.7);
   text-align: right;
 }
 

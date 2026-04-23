@@ -77,16 +77,48 @@ function extractFictionIdFromPage() {
     if (input?.value) return String(input.value);
   }
 
-  // 2) A link back to the fiction page, e.g. `<a href="/fiction/12345/...">`.
+  // 2) The breadcrumb on RR's draft/chapter-edit pages links back to the
+  // fiction dashboard and the chapters list. Both URLs carry the fiction
+  // id in the path, so either selector is sufficient:
+  //   /author-dashboard/dashboard/<fictionId>
+  //   /author-dashboard/chapters/list/<fictionId>
+  const breadcrumbLink = document.querySelector(
+    'a[href*="/author-dashboard/dashboard/"], a[href*="/author-dashboard/chapters/list/"]'
+  );
+  const breadcrumbMatch = breadcrumbLink
+    ?.getAttribute('href')
+    ?.match(/\/(?:dashboard|chapters\/list)\/(\d+)/);
+  if (breadcrumbMatch) return breadcrumbMatch[1];
+
+  // 3) Any direct `/fiction/<id>` link (legacy pages).
   const link = document.querySelector('a[href*="/fiction/"]');
   const linkMatch = link?.getAttribute('href')?.match(/\/fiction\/(\d+)/);
   if (linkMatch) return linkMatch[1];
 
-  // 3) A data attribute anywhere on the page.
+  // 4) A data attribute anywhere on the page.
   const dataEl = document.querySelector('[data-fiction-id]');
   if (dataEl) return dataEl.getAttribute('data-fiction-id');
 
   return null;
+}
+
+// Secondary fallback: if the DOM probes all miss, try matching the page's
+// heading text against the `myFictions` we've cached in IndexedDB. RR's
+// chapter-edit pages carry a heading like
+//   <h5>Add Chapter to Technomancer: ReGenesis [Kingdom Building | ...]</h5>
+// so a substring match against our stored fiction titles usually resolves
+// the right fiction. Longest title wins so "Fiction A" can't shadow
+// "Fiction A — Extended Edition".
+function matchFictionFromHeading(myFictions) {
+  if (!myFictions?.length) return null;
+  const heading =
+    document.querySelector('h5.font-weight-bold, h5.text-dark, h1, h2, h3')
+      ?.textContent?.trim() || '';
+  if (!heading) return null;
+  const candidates = myFictions
+    .filter(f => f.title && heading.includes(f.title))
+    .sort((a, b) => (b.title?.length || 0) - (a.title?.length || 0));
+  return candidates[0] ? String(candidates[0].fictionId) : null;
 }
 
 export function TodayBanner() {
@@ -109,7 +141,18 @@ export function TodayBanner() {
   const [modalMode, setModalMode] = useState('edit');
 
   const today = getToday();
-  const fictionId = extractFictionIdFromPath();
+  const [fictionId, setFictionId] = useState(() => extractFictionIdFromPath());
+
+  // When myFictions finishes loading, try the heading-title fallback if
+  // the DOM-probe phase returned null. Runs exactly once per change.
+  useEffect(() => {
+    if (fictionId || !myFictions?.length) return;
+    const fromHeading = matchFictionFromHeading(myFictions);
+    if (fromHeading) {
+      logger.info('Fiction id resolved from heading title match', { fictionId: fromHeading });
+      setFictionId(fromHeading);
+    }
+  }, [myFictions, fictionId]);
 
   // Load data and check for scheduled release date
   useEffect(() => {
@@ -149,7 +192,7 @@ export function TodayBanner() {
     if (!loading) {
       loadData();
     }
-  }, [targetDate]);
+  }, [targetDate, fictionId]);
 
   const loadData = async () => {
     try {
@@ -681,7 +724,24 @@ export function TodayBanner() {
           {/* Shoutouts list */}
           {!minimized && todayShoutouts.length > 0 && (
             <div class="rr-today-banner-shoutouts">
-              {todayShoutouts.map(shoutout => (
+              {todayShoutouts.map(shoutout => {
+                // Fallback label: when fiction auto-detect fails (RR layout
+                // change, missing breadcrumb, etc.), the banner can still
+                // show every schedule, so tag each row with which of OUR
+                // fictions it's scheduled for. Multiple schedules on the
+                // same date = comma-separated list.
+                const scheduleFictionIds = (shoutout.schedules || [])
+                  .filter(s => s.date === targetDate)
+                  .map(s => String(s.fictionId))
+                  .filter(Boolean);
+                const uniqueScheduleFictionIds = [...new Set(scheduleFictionIds)];
+                const ourFictionLabels = uniqueScheduleFictionIds
+                  .map(id => {
+                    const f = myFictions.find(x => String(x.fictionId) === id);
+                    return f?.title || `Fiction #${id}`;
+                  });
+
+                return (
                 <div key={shoutout.id} class="rr-today-banner-shoutout" data-shoutout-id={shoutout.id}>
                   {/* Book cover with spine effect */}
                   <div class="rr-today-banner-book">
@@ -707,6 +767,11 @@ export function TodayBanner() {
                     <div class="rr-today-banner-author">
                       by {shoutout.authorName || 'Unknown Author'}
                     </div>
+                    {ourFictionLabels.length > 0 && (
+                      <div class="rr-today-banner-for" title="Scheduled for this fiction of yours">
+                        <i class="fa fa-exchange-alt"></i> for {ourFictionLabels.join(', ')}
+                      </div>
+                    )}
                   </div>
 
                   {/* Action buttons */}
@@ -757,7 +822,8 @@ export function TodayBanner() {
                     </button>
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           )}
         </div>

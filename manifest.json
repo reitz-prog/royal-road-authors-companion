@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Author's Companion",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Calendar-based shoutout swap scheduler for Royal Road authors",
   "permissions": [
     "storage",

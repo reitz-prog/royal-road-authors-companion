@@ -108,7 +108,7 @@ export function SettingsModal({ isOpen, onClose, onClearAll }) {
         isOpen={isOpen}
         onClose={onClose}
         title="Settings"
-        className="rr-modal-small"
+        className="rr-modal-settings"
         footer={footer}
       >
         <div class="rr-settings-form">
