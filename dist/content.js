@@ -35943,6 +35943,25 @@
     const importPollRef = A2(null);
     const [untrackConfirm, setUntrackConfirm] = d3({ isOpen: false, shoutout: null });
     const [archiveSearch, setArchiveSearch] = d3("");
+    const [listFilter, setListFilter] = d3("all");
+    const [listSort, setListSort] = d3("newest");
+    const [filterPanelOpen, setFilterPanelOpen] = d3(false);
+    const [filterDateFrom, setFilterDateFrom] = d3("");
+    const [filterDateTo, setFilterDateTo] = d3("");
+    const [filterScanAge, setFilterScanAge] = d3("any");
+    const [filterFictionIds, setFilterFictionIds] = d3([]);
+    const filterPanelRef = A2(null);
+    y2(() => {
+      if (!filterPanelOpen)
+        return;
+      const onDocClick = (e4) => {
+        if (filterPanelRef.current && !filterPanelRef.current.contains(e4.target)) {
+          setFilterPanelOpen(false);
+        }
+      };
+      document.addEventListener("mousedown", onDocClick);
+      return () => document.removeEventListener("mousedown", onDocClick);
+    }, [filterPanelOpen]);
     const prevMonth = () => {
       if (month === 0) {
         setMonth(11);
@@ -36018,19 +36037,98 @@
     }, [shoutouts]);
     const listShoutouts = T2(() => {
       const query = archiveSearch.toLowerCase().trim();
-      return shoutouts.map((s4) => ({
+      const matchesStatusFilter = (scheds) => {
+        if (listFilter === "all")
+          return true;
+        if (listFilter === "reciprocated")
+          return scheds.some((s4) => s4.swappedDate);
+        if (listFilter === "need-return")
+          return scheds.some((s4) => s4.chapter && !s4.swappedDate);
+        if (listFilter === "scheduled")
+          return scheds.some((s4) => !s4.chapter && !s4.swappedDate);
+        return true;
+      };
+      const matchesDateRange = (scheds) => {
+        if (!filterDateFrom && !filterDateTo)
+          return true;
+        return scheds.some((s4) => {
+          if (!s4.date)
+            return false;
+          if (filterDateFrom && s4.date < filterDateFrom)
+            return false;
+          if (filterDateTo && s4.date > filterDateTo)
+            return false;
+          return true;
+        });
+      };
+      const ageDaysMap = { "7d": 7, "14d": 14, "30d": 30, "60d": 60 };
+      const ageDays = ageDaysMap[filterScanAge];
+      const ageThreshold = ageDays ? new Date(Date.now() - ageDays * 86400 * 1e3).toISOString().slice(0, 10) : null;
+      const matchesScanAge = (scheds) => {
+        if (filterScanAge === "any")
+          return true;
+        if (filterScanAge === "never")
+          return scheds.some((s4) => !s4.lastSwapScanDate);
+        if (ageThreshold) {
+          return scheds.some((s4) => !s4.lastSwapScanDate || s4.lastSwapScanDate < ageThreshold);
+        }
+        return true;
+      };
+      const fictionIdSet = filterFictionId ? /* @__PURE__ */ new Set([String(filterFictionId)]) : filterFictionIds.length > 0 ? new Set(filterFictionIds.map(String)) : null;
+      const cards = shoutouts.map((s4) => ({
         ...s4,
         listSchedules: (s4.schedules || []).filter(
-          (sched) => !filterFictionId || String(sched.fictionId) === String(filterFictionId)
+          (sched) => !fictionIdSet || fictionIdSet.has(String(sched.fictionId))
         )
-      })).filter((s4) => s4.listSchedules.length > 0).filter((s4) => {
+      })).filter((s4) => s4.listSchedules.length > 0).filter((s4) => matchesStatusFilter(s4.listSchedules)).filter((s4) => matchesDateRange(s4.listSchedules)).filter((s4) => matchesScanAge(s4.listSchedules)).filter((s4) => {
         if (!query)
           return true;
         const title = (s4.fictionTitle || "").toLowerCase();
         const author = (s4.authorName || "").toLowerCase();
         return title.includes(query) || author.includes(query);
       });
-    }, [shoutouts, filterFictionId, archiveSearch]);
+      const latestDate = (s4) => s4.listSchedules.map((x3) => x3.date).filter(Boolean).sort().pop() || "";
+      const earliestDate = (s4) => {
+        const dates = s4.listSchedules.map((x3) => x3.date).filter(Boolean).sort();
+        return dates[0] || "\uFFFF";
+      };
+      switch (listSort) {
+        case "oldest":
+          cards.sort((a4, b3) => earliestDate(a4).localeCompare(earliestDate(b3)));
+          break;
+        case "title":
+          cards.sort((a4, b3) => (a4.fictionTitle || "").localeCompare(b3.fictionTitle || ""));
+          break;
+        case "reciprocated-first": {
+          const rank = (s4) => s4.listSchedules.some((x3) => x3.swappedDate) ? 0 : 1;
+          cards.sort((a4, b3) => {
+            const d4 = rank(a4) - rank(b3);
+            if (d4 !== 0)
+              return d4;
+            return latestDate(b3).localeCompare(latestDate(a4));
+          });
+          break;
+        }
+        case "newest":
+        default:
+          cards.sort((a4, b3) => latestDate(b3).localeCompare(latestDate(a4)));
+      }
+      return cards;
+    }, [shoutouts, filterFictionId, archiveSearch, listFilter, listSort, filterDateFrom, filterDateTo, filterScanAge, filterFictionIds]);
+    const activeFilterCount = (listFilter !== "all" ? 1 : 0) + (filterDateFrom || filterDateTo ? 1 : 0) + (filterScanAge !== "any" ? 1 : 0) + (!filterFictionId && filterFictionIds.length > 0 ? 1 : 0);
+    const clearAllListFilters = () => {
+      setListFilter("all");
+      setFilterDateFrom("");
+      setFilterDateTo("");
+      setFilterScanAge("any");
+      setFilterFictionIds([]);
+    };
+    const toggleFilterFictionId = (id) => {
+      const key = String(id);
+      setFilterFictionIds(
+        (prev) => prev.map(String).includes(key) ? prev.filter((x3) => String(x3) !== key) : [...prev, key]
+      );
+    };
     const handleDragOver = (e4, dateStr) => {
       e4.preventDefault();
       e4.dataTransfer.dropEffect = "move";
@@ -36783,16 +36881,143 @@
           )
         ] }),
         currentView === "archive" && /* @__PURE__ */ u4("div", { class: "rr-archive-view", children: [
-          /* @__PURE__ */ u4("div", { class: "rr-archive-toolbar", children: /* @__PURE__ */ u4("div", { class: "rr-archive-search", children: /* @__PURE__ */ u4(
-            "input",
-            {
-              type: "text",
-              class: "form-control",
-              placeholder: "Search by title or author...",
-              value: archiveSearch,
-              onInput: (e4) => setArchiveSearch(e4.target.value)
-            }
-          ) }) }),
+          /* @__PURE__ */ u4("div", { class: "rr-archive-toolbar", children: [
+            /* @__PURE__ */ u4("div", { class: "rr-archive-search", children: /* @__PURE__ */ u4(
+              "input",
+              {
+                type: "text",
+                class: "form-control",
+                placeholder: "Search by title or author...",
+                value: archiveSearch,
+                onInput: (e4) => setArchiveSearch(e4.target.value)
+              }
+            ) }),
+            /* @__PURE__ */ u4("div", { class: "rr-archive-sort", children: /* @__PURE__ */ u4(
+              "select",
+              {
+                class: "form-control form-control-sm",
+                value: listSort,
+                onChange: (e4) => setListSort(e4.target.value),
+                title: "Sort",
+                children: [
+                  /* @__PURE__ */ u4("option", { value: "newest", children: "Newest post first" }),
+                  /* @__PURE__ */ u4("option", { value: "oldest", children: "Oldest post first" }),
+                  /* @__PURE__ */ u4("option", { value: "title", children: "Fiction title (A\u2013Z)" }),
+                  /* @__PURE__ */ u4("option", { value: "reciprocated-first", children: "Reciprocated first" })
+                ]
+              }
+            ) }),
+            /* @__PURE__ */ u4("div", { class: "rr-archive-filter-wrap", ref: filterPanelRef, children: [
+              /* @__PURE__ */ u4(
+                "button",
+                {
+                  type: "button",
+                  class: `rr-archive-filter-btn ${activeFilterCount > 0 ? "active" : ""}`,
+                  onClick: () => setFilterPanelOpen((o4) => !o4),
+                  title: activeFilterCount > 0 ? `${activeFilterCount} filter${activeFilterCount === 1 ? "" : "s"} active` : "Filter",
+                  children: [
+                    /* @__PURE__ */ u4("i", { class: "fa fa-filter" }),
+                    activeFilterCount > 0 && /* @__PURE__ */ u4("span", { class: "rr-archive-filter-badge", "aria-hidden": "true", children: activeFilterCount })
+                  ]
+                }
+              ),
+              filterPanelOpen && /* @__PURE__ */ u4("div", { class: "rr-archive-filter-panel", role: "dialog", children: [
+                /* @__PURE__ */ u4("div", { class: "rr-archive-filter-section", children: [
+                  /* @__PURE__ */ u4("div", { class: "rr-archive-filter-panel-label", children: "Status" }),
+                  /* @__PURE__ */ u4("div", { class: "rr-archive-filter-panel-options", children: [
+                    { key: "all", label: "All" },
+                    { key: "reciprocated", label: "Reciprocated" },
+                    { key: "need-return", label: "Need return" },
+                    { key: "scheduled", label: "Scheduled" }
+                  ].map((opt) => /* @__PURE__ */ u4(
+                    "button",
+                    {
+                      type: "button",
+                      class: `rr-archive-filter-chip ${listFilter === opt.key ? "active" : ""}`,
+                      onClick: () => setListFilter(opt.key),
+                      children: opt.label
+                    },
+                    opt.key
+                  )) })
+                ] }),
+                /* @__PURE__ */ u4("div", { class: "rr-archive-filter-section", children: [
+                  /* @__PURE__ */ u4("div", { class: "rr-archive-filter-panel-label", children: "Post date" }),
+                  /* @__PURE__ */ u4("div", { class: "rr-archive-filter-daterange", children: [
+                    /* @__PURE__ */ u4(
+                      "input",
+                      {
+                        type: "date",
+                        class: "form-control form-control-sm",
+                        value: filterDateFrom,
+                        onChange: (e4) => setFilterDateFrom(e4.target.value),
+                        title: "From"
+                      }
+                    ),
+                    /* @__PURE__ */ u4("span", { class: "rr-archive-filter-daterange-sep", children: "\u2192" }),
+                    /* @__PURE__ */ u4(
+                      "input",
+                      {
+                        type: "date",
+                        class: "form-control form-control-sm",
+                        value: filterDateTo,
+                        onChange: (e4) => setFilterDateTo(e4.target.value),
+                        title: "To"
+                      }
+                    )
+                  ] })
+                ] }),
+                /* @__PURE__ */ u4("div", { class: "rr-archive-filter-section", children: [
+                  /* @__PURE__ */ u4("div", { class: "rr-archive-filter-panel-label", children: "Scan age" }),
+                  /* @__PURE__ */ u4(
+                    "select",
+                    {
+                      class: "form-control form-control-sm",
+                      value: filterScanAge,
+                      onChange: (e4) => setFilterScanAge(e4.target.value),
+                      children: [
+                        /* @__PURE__ */ u4("option", { value: "any", children: "Any" }),
+                        /* @__PURE__ */ u4("option", { value: "never", children: "Never scanned" }),
+                        /* @__PURE__ */ u4("option", { value: "7d", children: "Not scanned in 7+ days" }),
+                        /* @__PURE__ */ u4("option", { value: "14d", children: "Not scanned in 14+ days" }),
+                        /* @__PURE__ */ u4("option", { value: "30d", children: "Not scanned in 30+ days" }),
+                        /* @__PURE__ */ u4("option", { value: "60d", children: "Not scanned in 60+ days" })
+                      ]
+                    }
+                  )
+                ] }),
+                !filterFictionId && myFictions.length > 1 && /* @__PURE__ */ u4("div", { class: "rr-archive-filter-section", children: [
+                  /* @__PURE__ */ u4("div", { class: "rr-archive-filter-panel-label", children: "Fictions" }),
+                  /* @__PURE__ */ u4("div", { class: "rr-archive-filter-fiction-list", children: myFictions.map((f5) => {
+                    const key = String(f5.fictionId);
+                    const checked = filterFictionIds.map(String).includes(key);
+                    return /* @__PURE__ */ u4("label", { class: "rr-archive-filter-fiction-item", children: [
+                      /* @__PURE__ */ u4(
+                        "input",
+                        {
+                          type: "checkbox",
+                          checked,
+                          onChange: () => toggleFilterFictionId(f5.fictionId)
+                        }
+                      ),
+                      /* @__PURE__ */ u4("span", { children: f5.title || `Fiction ${f5.fictionId}` })
+                    ] }, key);
+                  }) })
+                ] }),
+                activeFilterCount > 0 && /* @__PURE__ */ u4(
+                  "button",
+                  {
+                    type: "button",
+                    class: "rr-archive-filter-clear",
+                    onClick: clearAllListFilters,
+                    children: [
+                      /* @__PURE__ */ u4("i", { class: "fa fa-times" }),
+                      " Clear all filters"
+                    ]
+                  }
+                )
+              ] })
+            ] })
+          ] }),
           /* @__PURE__ */ u4("div", { class: "rr-archive-entries", children: listShoutouts.length === 0 ? /* @__PURE__ */ u4("div", { class: "rr-archive-empty", children: "No shoutouts yet. Add one on the calendar to get started." }) : listShoutouts.map((s4) => {
             const checkState = swapCheckStates[s4.id];
             const isChecking = checkState?.status === "checking";
@@ -41630,11 +41855,173 @@
   display: flex;
   gap: 0.5rem;
   align-items: center;
-  margin-bottom: 1rem;
+  margin-bottom: 0.5rem;
 }
 
 .rr-archive-search {
   flex: 1;
+}
+
+.rr-archive-sort select {
+  min-width: 180px;
+}
+
+.rr-archive-filter-wrap {
+  position: relative;
+}
+
+.rr-archive-filter-btn {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 4px;
+  color: inherit;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s;
+}
+
+.rr-archive-filter-btn:hover {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.rr-archive-filter-btn.active {
+  background: rgba(51, 122, 183, 0.15);
+  border-color: #337ab7;
+  color: #337ab7;
+}
+
+.rr-archive-filter-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background: #337ab7;
+  color: #fff;
+  border-radius: 8px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.rr-archive-filter-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 50;
+  min-width: 260px;
+  max-width: 320px;
+  padding: 0.75rem;
+  background: var(--rr-card-bg, #2b2b2b);
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.rr-archive-filter-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.rr-archive-filter-panel-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(128, 128, 128, 0.8);
+}
+
+.rr-archive-filter-panel-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.rr-archive-filter-daterange {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.rr-archive-filter-daterange input {
+  flex: 1;
+  min-width: 0;
+}
+
+.rr-archive-filter-daterange-sep {
+  color: rgba(128, 128, 128, 0.7);
+  font-size: 0.85rem;
+}
+
+.rr-archive-filter-fiction-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 0.25rem 0;
+}
+
+.rr-archive-filter-fiction-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  margin: 0;
+}
+
+.rr-archive-filter-fiction-item input {
+  margin: 0;
+}
+
+.rr-archive-filter-chip {
+  padding: 0.2rem 0.75rem;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.rr-archive-filter-chip:hover {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.rr-archive-filter-chip.active {
+  background: #337ab7;
+  border-color: #337ab7;
+  color: #fff;
+}
+
+.rr-archive-filter-clear {
+  align-self: flex-start;
+  background: transparent;
+  border: none;
+  color: rgba(200, 100, 100, 0.9);
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0.2rem 0;
+}
+
+.rr-archive-filter-clear:hover {
+  color: #dc3545;
 }
 
 .rr-archive-list {

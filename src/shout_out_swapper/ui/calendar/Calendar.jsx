@@ -60,8 +60,28 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
   // Untrack confirm dialog state
   const [untrackConfirm, setUntrackConfirm] = useState({ isOpen: false, shoutout: null });
 
-  // Archive search state
+  // Archive search / filter / sort state
   const [archiveSearch, setArchiveSearch] = useState('');
+  const [listFilter, setListFilter] = useState('all'); // all | reciprocated | need-return | scheduled
+  const [listSort, setListSort] = useState('newest'); // newest | oldest | title | reciprocated-first
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
+  const [filterScanAge, setFilterScanAge] = useState('any'); // any | never | 7d | 14d | 30d | 60d
+  const [filterFictionIds, setFilterFictionIds] = useState([]); // []: no multi-fiction filter
+  const filterPanelRef = useRef(null);
+
+  // Close the filter popover on outside click
+  useEffect(() => {
+    if (!filterPanelOpen) return;
+    const onDocClick = (e) => {
+      if (filterPanelRef.current && !filterPanelRef.current.contains(e.target)) {
+        setFilterPanelOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [filterPanelOpen]);
 
   const prevMonth = () => {
     if (month === 0) {
@@ -149,21 +169,122 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
   // of truth across scheduled / pending / archived / swapped states.
   const listShoutouts = useMemo(() => {
     const query = archiveSearch.toLowerCase().trim();
-    return shoutouts
+
+    const matchesStatusFilter = (scheds) => {
+      if (listFilter === 'all') return true;
+      if (listFilter === 'reciprocated') return scheds.some(s => s.swappedDate);
+      if (listFilter === 'need-return') return scheds.some(s => s.chapter && !s.swappedDate);
+      if (listFilter === 'scheduled') return scheds.some(s => !s.chapter && !s.swappedDate);
+      return true;
+    };
+
+    const matchesDateRange = (scheds) => {
+      if (!filterDateFrom && !filterDateTo) return true;
+      return scheds.some(s => {
+        if (!s.date) return false;
+        if (filterDateFrom && s.date < filterDateFrom) return false;
+        if (filterDateTo && s.date > filterDateTo) return false;
+        return true;
+      });
+    };
+
+    const ageDaysMap = { '7d': 7, '14d': 14, '30d': 30, '60d': 60 };
+    const ageDays = ageDaysMap[filterScanAge];
+    const ageThreshold = ageDays
+      ? new Date(Date.now() - ageDays * 86400 * 1000).toISOString().slice(0, 10)
+      : null;
+    const matchesScanAge = (scheds) => {
+      if (filterScanAge === 'any') return true;
+      if (filterScanAge === 'never') return scheds.some(s => !s.lastSwapScanDate);
+      if (ageThreshold) {
+        return scheds.some(s => !s.lastSwapScanDate || s.lastSwapScanDate < ageThreshold);
+      }
+      return true;
+    };
+
+    // Main dropdown (single fiction) takes precedence over the panel's
+    // multi-select; when the dropdown is "All", the multi-select applies.
+    const fictionIdSet = filterFictionId
+      ? new Set([String(filterFictionId)])
+      : filterFictionIds.length > 0
+        ? new Set(filterFictionIds.map(String))
+        : null;
+
+    const cards = shoutouts
       .map(s => ({
         ...s,
         listSchedules: (s.schedules || []).filter(sched =>
-          !filterFictionId || String(sched.fictionId) === String(filterFictionId)
+          !fictionIdSet || fictionIdSet.has(String(sched.fictionId))
         )
       }))
       .filter(s => s.listSchedules.length > 0)
+      .filter(s => matchesStatusFilter(s.listSchedules))
+      .filter(s => matchesDateRange(s.listSchedules))
+      .filter(s => matchesScanAge(s.listSchedules))
       .filter(s => {
         if (!query) return true;
         const title = (s.fictionTitle || '').toLowerCase();
         const author = (s.authorName || '').toLowerCase();
         return title.includes(query) || author.includes(query);
       });
-  }, [shoutouts, filterFictionId, archiveSearch]);
+
+    const latestDate = (s) =>
+      (s.listSchedules.map(x => x.date).filter(Boolean).sort().pop()) || '';
+    const earliestDate = (s) => {
+      const dates = s.listSchedules.map(x => x.date).filter(Boolean).sort();
+      return dates[0] || '\uffff'; // push undated to end
+    };
+
+    switch (listSort) {
+      case 'oldest':
+        cards.sort((a, b) => earliestDate(a).localeCompare(earliestDate(b)));
+        break;
+      case 'title':
+        cards.sort((a, b) => (a.fictionTitle || '').localeCompare(b.fictionTitle || ''));
+        break;
+      case 'reciprocated-first': {
+        const rank = (s) => (s.listSchedules.some(x => x.swappedDate) ? 0 : 1);
+        cards.sort((a, b) => {
+          const d = rank(a) - rank(b);
+          if (d !== 0) return d;
+          return latestDate(b).localeCompare(latestDate(a));
+        });
+        break;
+      }
+      case 'newest':
+      default:
+        cards.sort((a, b) => latestDate(b).localeCompare(latestDate(a)));
+    }
+
+    return cards;
+  }, [shoutouts, filterFictionId, archiveSearch, listFilter, listSort, filterDateFrom, filterDateTo, filterScanAge, filterFictionIds]);
+
+  // Count how many filter dimensions are active (for the funnel badge).
+  // Multi-fiction dimension only counts when the main dropdown isn't already
+  // scoping to a single fiction.
+  const activeFilterCount = (
+    (listFilter !== 'all' ? 1 : 0) +
+    (filterDateFrom || filterDateTo ? 1 : 0) +
+    (filterScanAge !== 'any' ? 1 : 0) +
+    (!filterFictionId && filterFictionIds.length > 0 ? 1 : 0)
+  );
+
+  const clearAllListFilters = () => {
+    setListFilter('all');
+    setFilterDateFrom('');
+    setFilterDateTo('');
+    setFilterScanAge('any');
+    setFilterFictionIds([]);
+  };
+
+  const toggleFilterFictionId = (id) => {
+    const key = String(id);
+    setFilterFictionIds(prev =>
+      prev.map(String).includes(key)
+        ? prev.filter(x => String(x) !== key)
+        : [...prev, key]
+    );
+  };
 
   // Drag and drop handlers
   const handleDragOver = (e, dateStr) => {
@@ -1013,6 +1134,125 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
                   value={archiveSearch}
                   onInput={(e) => setArchiveSearch(e.target.value)}
                 />
+              </div>
+              <div class="rr-archive-sort">
+                <select
+                  class="form-control form-control-sm"
+                  value={listSort}
+                  onChange={(e) => setListSort(e.target.value)}
+                  title="Sort"
+                >
+                  <option value="newest">Newest post first</option>
+                  <option value="oldest">Oldest post first</option>
+                  <option value="title">Fiction title (A–Z)</option>
+                  <option value="reciprocated-first">Reciprocated first</option>
+                </select>
+              </div>
+              <div class="rr-archive-filter-wrap" ref={filterPanelRef}>
+                <button
+                  type="button"
+                  class={`rr-archive-filter-btn ${activeFilterCount > 0 ? 'active' : ''}`}
+                  onClick={() => setFilterPanelOpen(o => !o)}
+                  title={activeFilterCount > 0 ? `${activeFilterCount} filter${activeFilterCount === 1 ? '' : 's'} active` : 'Filter'}
+                >
+                  <i class="fa fa-filter"></i>
+                  {activeFilterCount > 0 && (
+                    <span class="rr-archive-filter-badge" aria-hidden="true">{activeFilterCount}</span>
+                  )}
+                </button>
+                {filterPanelOpen && (
+                  <div class="rr-archive-filter-panel" role="dialog">
+                    <div class="rr-archive-filter-section">
+                      <div class="rr-archive-filter-panel-label">Status</div>
+                      <div class="rr-archive-filter-panel-options">
+                        {[
+                          { key: 'all', label: 'All' },
+                          { key: 'reciprocated', label: 'Reciprocated' },
+                          { key: 'need-return', label: 'Need return' },
+                          { key: 'scheduled', label: 'Scheduled' },
+                        ].map(opt => (
+                          <button
+                            key={opt.key}
+                            type="button"
+                            class={`rr-archive-filter-chip ${listFilter === opt.key ? 'active' : ''}`}
+                            onClick={() => setListFilter(opt.key)}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div class="rr-archive-filter-section">
+                      <div class="rr-archive-filter-panel-label">Post date</div>
+                      <div class="rr-archive-filter-daterange">
+                        <input
+                          type="date"
+                          class="form-control form-control-sm"
+                          value={filterDateFrom}
+                          onChange={(e) => setFilterDateFrom(e.target.value)}
+                          title="From"
+                        />
+                        <span class="rr-archive-filter-daterange-sep">→</span>
+                        <input
+                          type="date"
+                          class="form-control form-control-sm"
+                          value={filterDateTo}
+                          onChange={(e) => setFilterDateTo(e.target.value)}
+                          title="To"
+                        />
+                      </div>
+                    </div>
+
+                    <div class="rr-archive-filter-section">
+                      <div class="rr-archive-filter-panel-label">Scan age</div>
+                      <select
+                        class="form-control form-control-sm"
+                        value={filterScanAge}
+                        onChange={(e) => setFilterScanAge(e.target.value)}
+                      >
+                        <option value="any">Any</option>
+                        <option value="never">Never scanned</option>
+                        <option value="7d">Not scanned in 7+ days</option>
+                        <option value="14d">Not scanned in 14+ days</option>
+                        <option value="30d">Not scanned in 30+ days</option>
+                        <option value="60d">Not scanned in 60+ days</option>
+                      </select>
+                    </div>
+
+                    {!filterFictionId && myFictions.length > 1 && (
+                      <div class="rr-archive-filter-section">
+                        <div class="rr-archive-filter-panel-label">Fictions</div>
+                        <div class="rr-archive-filter-fiction-list">
+                          {myFictions.map(f => {
+                            const key = String(f.fictionId);
+                            const checked = filterFictionIds.map(String).includes(key);
+                            return (
+                              <label key={key} class="rr-archive-filter-fiction-item">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleFilterFictionId(f.fictionId)}
+                                />
+                                <span>{f.title || `Fiction ${f.fictionId}`}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {activeFilterCount > 0 && (
+                      <button
+                        type="button"
+                        class="rr-archive-filter-clear"
+                        onClick={clearAllListFilters}
+                      >
+                        <i class="fa fa-times"></i> Clear all filters
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
