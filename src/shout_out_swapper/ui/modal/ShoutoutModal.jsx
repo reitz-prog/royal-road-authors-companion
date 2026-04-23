@@ -688,6 +688,51 @@ export function ShoutoutModal({
   );
 }
 
+// Compute per-schedule swap state. Pure function of one `sched` entry.
+// States mirror the archive/list view vocabulary.
+function getSchedulePillState(sched) {
+  const wePosted = !!sched.chapter;
+  const theyPosted = !!sched.swappedDate;
+  const scanned = !!sched.lastSwapScanDate;
+  if (wePosted && theyPosted) return 'SWAPPED';
+  if (wePosted && !theyPosted && scanned) return 'NOT FOUND';
+  if (wePosted && !theyPosted && !scanned) return 'NOT SCANNED';
+  if (theyPosted) return 'SHOUTED';
+  return 'SCHEDULED';
+}
+
+function SchedulePill({ state, sched }) {
+  const classByState = {
+    SWAPPED: 'rr-swap-badge-swapped',
+    'NOT FOUND': 'rr-swap-badge-not-found',
+    'NOT SCANNED': 'rr-swap-badge-not-scanned',
+    SHOUTED: 'rr-swap-badge-shouted',
+    SCHEDULED: 'rr-swap-badge-scheduled',
+  };
+  const cls = classByState[state] || 'rr-swap-badge-scheduled';
+  const clickable = state === 'SWAPPED' && !!sched.swappedChapterUrl;
+  const titleParts = [state];
+  if (state === 'SWAPPED' && sched.swappedChapter) titleParts.push(`in "${sched.swappedChapter}"`);
+  if (state === 'NOT FOUND' && sched.lastSwapScanDate) titleParts.push(`scanned ${sched.lastSwapScanDate}`);
+  const title = titleParts.join(' — ');
+
+  if (clickable) {
+    return (
+      <a
+        class={`rr-swap-pill ${cls} rr-swap-badge-clickable`}
+        href={sched.swappedChapterUrl}
+        target="_blank"
+        rel="noopener"
+        title={title}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {state}
+      </a>
+    );
+  }
+  return <span class={`rr-swap-pill ${cls}`} title={title}>{state}</span>;
+}
+
 function AuthorInfo({ info, loading, shoutout, schedules = [], myFictions = [], onCheckSwap, checkingSwap, checkProgress, swapResult }) {
   if (loading) {
     return <div class="rr-author-empty">Loading...</div>;
@@ -697,34 +742,12 @@ function AuthorInfo({ info, loading, shoutout, schedules = [], myFictions = [], 
     return <div class="rr-author-empty">Paste code to see author info</div>;
   }
 
-  // Check both saved state AND fresh result from just-completed check
-  const wePosted = shoutout?.schedules?.some(s => s.chapter); // We posted their shoutout
-  const theyReturned = !!shoutout?.swappedDate || swapResult?.found;
   const lastScan = shoutout?.lastSwapScanDate;
-  // Check if we just completed a scan (swapResult exists without error)
-  const justScanned = swapResult !== null && !swapResult?.error;
-  const foundChapter = shoutout?.swappedChapter || swapResult?.chapter;
-  const foundChapterUrl = shoutout?.swappedChapterUrl || swapResult?.chapterUrl;
-
-  // Determine swap state
-  // SWAPPED = Us AND Them (both posted) - green
-  // NOT FOUND = Us NOT Them AND scanned - red
-  // NOT SCANNED = Us posted but not scanned - grey hourglass
-  // SHOUTED = Them NOT Us - cyan
-  // SCHEDULED = neither posted - orange
-  const hasScanned = lastScan || justScanned;
-  let swapState = 'SCHEDULED';
-
-  if (wePosted && theyReturned) {
-    swapState = 'SWAPPED';
-  } else if (wePosted && !theyReturned && hasScanned) {
-    swapState = 'NOT FOUND';
-  } else if (wePosted && !theyReturned && !hasScanned) {
-    swapState = 'NOT SCANNED';
-  } else if (theyReturned) {
-    swapState = 'SHOUTED';
-  }
-  // else stays SCHEDULED
+  // Any schedule that still needs checking gates the "Check Swap" button.
+  const needsCheck = (schedules || []).some(s => {
+    const st = getSchedulePillState(s);
+    return st === 'NOT SCANNED' || st === 'NOT FOUND' || st === 'SCHEDULED' || st === 'SHOUTED';
+  });
 
   return (
     <div class="rr-author-card-large">
@@ -743,7 +766,7 @@ function AuthorInfo({ info, loading, shoutout, schedules = [], myFictions = [], 
         </a>
       )}
 
-      {/* Scheduled for section - shows which of user's fictions this is scheduled on */}
+      {/* Scheduled for section — each item carries its own per-schedule pill */}
       {schedules.length > 0 && (
         <div class="rr-scheduled-for-section">
           <div class="rr-scheduled-for-label">Scheduled for:</div>
@@ -752,12 +775,13 @@ function AuthorInfo({ info, loading, shoutout, schedules = [], myFictions = [], 
               const fiction = myFictions.find(f => String(f.fictionId) === String(sched.fictionId));
               const fictionTitle = fiction?.title || `Fiction #${sched.fictionId}`;
               const isArchived = !!sched.chapter;
+              const state = getSchedulePillState(sched);
               return (
                 <div key={idx} class={`rr-scheduled-for-item ${isArchived ? 'rr-archived' : ''}`}>
                   <span class="rr-scheduled-fiction-title">{fictionTitle}</span>
                   {sched.date && <span class="rr-scheduled-date">{sched.date}</span>}
                   {!sched.date && <span class="rr-scheduled-date rr-unscheduled">Unscheduled</span>}
-                  {isArchived && <i class="fa fa-check-circle rr-archived-icon" title="Archived"></i>}
+                  {shoutout && <SchedulePill state={state} sched={sched} />}
                 </div>
               );
             })}
@@ -765,7 +789,7 @@ function AuthorInfo({ info, loading, shoutout, schedules = [], myFictions = [], 
         </div>
       )}
 
-      {/* Swap Status Section - only in view mode when shoutout exists */}
+      {/* Scan progress / action — only when viewing an existing shoutout */}
       {shoutout && (
         <div class="rr-swap-section">
           {checkingSwap ? (
@@ -790,57 +814,22 @@ function AuthorInfo({ info, loading, shoutout, schedules = [], myFictions = [], 
                 </>
               )}
             </div>
-          ) : swapState === 'SWAPPED' ? (
-            <div class="rr-swap-badge rr-swap-badge-swapped">SWAPPED</div>
-          ) : swapState === 'NOT FOUND' ? (
+          ) : needsCheck ? (
             <button
-              class="rr-swap-badge rr-swap-badge-not-found rr-swap-badge-clickable"
+              class="btn btn-sm btn-outline-primary rr-check-swap-btn"
               onClick={onCheckSwap}
-              title="Click to check again"
+              title="Scan their fiction for return shoutouts"
             >
-              NOT FOUND
+              <i class="fa fa-search"></i> Check for swap returns
             </button>
-          ) : swapState === 'NOT SCANNED' ? (
-            <button
-              class="rr-swap-badge rr-swap-badge-not-scanned rr-swap-badge-clickable"
-              onClick={onCheckSwap}
-              title="Click to scan for their shoutout"
-            >
-              NOT SCANNED
-            </button>
-          ) : swapState === 'SHOUTED' ? (
-            <button
-              class="rr-swap-badge rr-swap-badge-shouted rr-swap-badge-clickable"
-              onClick={onCheckSwap}
-              title="Click to verify"
-            >
-              THEY SHOUTED YOU
-            </button>
-          ) : (
-            <button
-              class="rr-swap-badge rr-swap-badge-scheduled rr-swap-badge-clickable"
-              onClick={onCheckSwap}
-              title="Click to check if they shouted you"
-            >
-              SCHEDULED
-            </button>
-          )}
-          {lastScan && !checkingSwap && swapState !== 'RETURNED' && (
+          ) : null}
+          {lastScan && !checkingSwap && (
             <div class="rr-swap-last-scan">Last scan: {lastScan}</div>
           )}
-        </div>
-      )}
-
-      {/* Found in chapter info */}
-      {foundChapter && (
-        <div class="rr-swap-found">
-          <div class="rr-swap-found-label">
-            <i class="fa fa-check-circle"></i> Found in "{foundChapter}"
-          </div>
-          {foundChapterUrl && (
-            <a href={foundChapterUrl} target="_blank" rel="noopener" class="rr-swap-view-link">
-              <i class="fa fa-external-link"></i> View Chapter
-            </a>
+          {swapResult?.error && (
+            <div class="rr-swap-result rr-swap-not-found">
+              <i class="fa fa-exclamation-circle"></i> Error: {swapResult.error}
+            </div>
           )}
         </div>
       )}

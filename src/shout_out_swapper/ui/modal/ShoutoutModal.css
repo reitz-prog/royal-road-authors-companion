@@ -303,6 +303,30 @@
   flex-shrink: 0;
 }
 
+/* Per-schedule swap pill (inline inside rr-scheduled-for-item) */
+.rr-swap-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  line-height: 1.4;
+  flex-shrink: 0;
+  text-decoration: none;
+}
+
+.rr-swap-pill:hover {
+  text-decoration: none;
+}
+
+.rr-swap-pill.rr-swap-badge-clickable:hover {
+  filter: brightness(1.2);
+  transform: scale(1.05);
+}
+
 /* Expected date row */
 .rr-expected-date-row {
   display: flex;
@@ -611,6 +635,13 @@
   background: rgba(230, 126, 34, 0.2);
   color: #e67e22;
   border: 1px solid #e67e22;
+}
+
+/* We posted but haven't scanned their chapters yet (grey) */
+.rr-swap-badge-not-scanned {
+  background: rgba(128, 128, 128, 0.2);
+  color: rgba(200, 200, 200, 0.9);
+  border: 1px solid rgba(128, 128, 128, 0.5);
 }
 
 .rr-swap-badge-clickable {

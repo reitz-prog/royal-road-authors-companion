@@ -36016,14 +36016,14 @@
         return activeSchedules.every((sch) => !sch.date);
       });
     }, [shoutouts]);
-    const archivedShoutouts = T2(() => {
+    const listShoutouts = T2(() => {
       const query = archiveSearch.toLowerCase().trim();
-      return shoutouts.filter((s4) => s4.schedules?.some((sched) => sched.chapter)).map((s4) => ({
+      return shoutouts.map((s4) => ({
         ...s4,
-        archivedSchedules: s4.schedules?.filter(
-          (sched) => sched.chapter && (!filterFictionId || String(sched.fictionId) === String(filterFictionId))
-        ) || []
-      })).filter((s4) => s4.archivedSchedules.length > 0).filter((s4) => {
+        listSchedules: (s4.schedules || []).filter(
+          (sched) => !filterFictionId || String(sched.fictionId) === String(filterFictionId)
+        )
+      })).filter((s4) => s4.listSchedules.length > 0).filter((s4) => {
         if (!query)
           return true;
         const title = (s4.fictionTitle || "").toLowerCase();
@@ -36793,46 +36793,45 @@
               onInput: (e4) => setArchiveSearch(e4.target.value)
             }
           ) }) }),
-          /* @__PURE__ */ u4("div", { class: "rr-archive-entries", children: archivedShoutouts.length === 0 ? /* @__PURE__ */ u4("div", { class: "rr-archive-empty", children: "No archived shoutouts yet. Select a fiction and scan to find shoutouts in your chapters." }) : archivedShoutouts.map((s4) => {
-            const wePosted = s4.schedules?.some((sch) => sch.chapter);
-            const theyPosted = !!s4.swappedDate;
-            const hasScanned = !!s4.lastSwapScanDate;
-            const schedule = s4.archivedSchedules?.[0] || s4.schedules?.[0];
-            const scheduleFiction = myFictions.find((f5) => String(f5.fictionId) === String(schedule?.fictionId));
+          /* @__PURE__ */ u4("div", { class: "rr-archive-entries", children: listShoutouts.length === 0 ? /* @__PURE__ */ u4("div", { class: "rr-archive-empty", children: "No shoutouts yet. Add one on the calendar to get started." }) : listShoutouts.map((s4) => {
             const checkState = swapCheckStates[s4.id];
             const isChecking = checkState?.status === "checking";
+            const scheds = s4.listSchedules;
+            const archivedScheds = scheds.filter((x3) => x3.chapter);
+            const anyArchived = archivedScheds.length > 0;
+            const allArchivedSwapped = anyArchived && archivedScheds.every((x3) => x3.swappedDate);
+            const anyArchivedSwapped = archivedScheds.some((x3) => x3.swappedDate);
+            const allArchivedScanned = anyArchived && archivedScheds.every((x3) => x3.lastSwapScanDate);
             let statusClass = "rr-swap-status-scheduled";
             let statusIcon = "fa-clock";
-            let statusTitle = "Scheduled";
+            let statusTitle = "Scheduled \u2014 not posted yet";
             if (isChecking) {
               statusClass = "rr-swap-status-checking";
               statusIcon = "fa-spinner fa-spin";
               statusTitle = "Checking for swap...";
-            } else if (wePosted && theyPosted) {
+            } else if (anyArchived && allArchivedSwapped) {
               statusClass = "rr-swap-status-swapped";
               statusIcon = "fa-retweet";
-              statusTitle = "Swapped!";
-            } else if (wePosted && !theyPosted && hasScanned) {
+              statusTitle = "All archived schedules swapped";
+            } else if (anyArchivedSwapped) {
+              statusClass = "rr-swap-status-scheduled";
+              statusIcon = "fa-adjust";
+              statusTitle = "Partial swap \u2014 some schedules not yet reciprocated";
+            } else if (anyArchived && allArchivedScanned) {
               statusClass = "rr-swap-status-notfound";
               statusIcon = "fa-times";
-              statusTitle = "Not found - they haven't shouted you";
-            } else if (wePosted && !theyPosted && !hasScanned) {
+              statusTitle = "Not found \u2014 they haven't shouted you";
+            } else if (anyArchived) {
               statusClass = "rr-swap-status-notscanned";
               statusIcon = "fa-hourglass-half";
               statusTitle = "Not scanned yet";
-            } else if (theyPosted) {
-              statusClass = "rr-swap-status-shouted";
-              statusIcon = "fa-comment";
-              statusTitle = "They shouted you!";
             }
             return /* @__PURE__ */ u4(
               "div",
               {
-                class: `rr-archive-entry ${wePosted ? "rr-archive-entry-archived" : "rr-archive-entry-pending"} ${isChecking ? "rr-archive-entry-checking" : ""}`,
+                class: `rr-archive-entry ${anyArchived ? "rr-archive-entry-archived" : "rr-archive-entry-pending"} ${isChecking ? "rr-archive-entry-checking" : ""}`,
                 "data-shoutout-id": s4.id,
                 "data-fiction-id": s4.fictionId,
-                "data-schedule-fiction-id": schedule?.fictionId || "",
-                "data-schedule-chapter": schedule?.chapter || "",
                 onClick: () => onShoutoutClick?.(s4, null, "view"),
                 children: [
                   /* @__PURE__ */ u4("div", { class: "rr-archive-entry-covers", children: /* @__PURE__ */ u4("div", { class: "rr-archive-shoutout-cover", title: s4.fictionTitle || "Unknown", style: { cursor: "pointer" }, children: [
@@ -36840,7 +36839,6 @@
                     /* @__PURE__ */ u4("span", { class: `rr-archive-status-overlay ${statusClass}`, title: statusTitle, children: /* @__PURE__ */ u4("i", { class: `fa ${statusIcon}` }) })
                   ] }) }),
                   /* @__PURE__ */ u4("div", { class: "rr-archive-entry-info", children: [
-                    /* @__PURE__ */ u4("div", { class: "rr-archive-entry-header", children: /* @__PURE__ */ u4("span", { class: "rr-archive-date", children: schedule?.date || "Unscheduled" }) }),
                     /* @__PURE__ */ u4("div", { class: "rr-archive-shoutout-info", children: [
                       /* @__PURE__ */ u4("span", { class: "rr-archive-shoutout-title", children: /* @__PURE__ */ u4(
                         "a",
@@ -36858,13 +36856,66 @@
                         /* @__PURE__ */ u4("span", { class: "rr-archive-author-link", "data-author": s4.authorName, children: s4.authorName || "Unknown" })
                       ] })
                     ] }),
-                    scheduleFiction && /* @__PURE__ */ u4("div", { class: "rr-archive-swapped-for", children: [
-                      /* @__PURE__ */ u4("i", { class: "fa fa-exchange-alt" }),
-                      " ",
-                      scheduleFiction.title || `Fiction ${schedule.fictionId}`
-                    ] })
+                    /* @__PURE__ */ u4("div", { class: "rr-archive-schedule-lines", children: scheds.map((sched, idx) => {
+                      const fiction = myFictions.find((f5) => String(f5.fictionId) === String(sched.fictionId));
+                      const fictionTitle = fiction?.title || `Fiction ${sched.fictionId}`;
+                      const wePosted = !!sched.chapter;
+                      const swapped = !!sched.swappedDate;
+                      const scanned = !!sched.lastSwapScanDate;
+                      let lineClass = "rr-schedule-scheduled";
+                      let indicator = /* @__PURE__ */ u4("span", { class: "rr-schedule-swap-state", title: "Scheduled \u2014 not posted yet", children: [
+                        /* @__PURE__ */ u4("i", { class: "fa fa-clock" }),
+                        " Scheduled"
+                      ] });
+                      if (swapped) {
+                        lineClass = "rr-schedule-swapped";
+                        indicator = /* @__PURE__ */ u4(
+                          "a",
+                          {
+                            href: sched.swappedChapterUrl || "#",
+                            target: "_blank",
+                            rel: "noopener",
+                            class: "rr-schedule-swap-link",
+                            title: sched.swappedChapter || "View swap chapter",
+                            onClick: (e4) => e4.stopPropagation(),
+                            children: [
+                              /* @__PURE__ */ u4("i", { class: "fa fa-external-link" }),
+                              " ",
+                              sched.swappedChapter || "View chapter"
+                            ]
+                          }
+                        );
+                      } else if (wePosted && scanned) {
+                        lineClass = "rr-schedule-notfound";
+                        indicator = /* @__PURE__ */ u4("span", { class: "rr-schedule-swap-state", title: `Scanned ${sched.lastSwapScanDate}, no link to ${fictionTitle} found`, children: [
+                          /* @__PURE__ */ u4("i", { class: "fa fa-times" }),
+                          " Not found"
+                        ] });
+                      } else if (wePosted) {
+                        lineClass = "rr-schedule-notscanned";
+                        indicator = /* @__PURE__ */ u4("span", { class: "rr-schedule-swap-state", title: "Posted, not scanned yet", children: [
+                          /* @__PURE__ */ u4("i", { class: "fa fa-hourglass-half" }),
+                          " Pending scan"
+                        ] });
+                      }
+                      return /* @__PURE__ */ u4(
+                        "div",
+                        {
+                          class: `rr-archive-schedule-line ${lineClass}`,
+                          children: [
+                            /* @__PURE__ */ u4("span", { class: "rr-schedule-our-fiction", children: [
+                              /* @__PURE__ */ u4("i", { class: "fa fa-exchange-alt" }),
+                              " ",
+                              fictionTitle
+                            ] }),
+                            /* @__PURE__ */ u4("span", { class: "rr-schedule-our-date", children: sched.date || "Unscheduled" }),
+                            indicator
+                          ]
+                        },
+                        `${sched.fictionId}-${sched.date || ""}-${sched.chapter || ""}-${idx}`
+                      );
+                    }) })
                   ] }),
-                  /* @__PURE__ */ u4("div", { class: "rr-archive-entry-status", children: wePosted ? /* @__PURE__ */ u4("span", { class: "rr-list-status-icon rr-list-archived-icon rr-archived", title: `Archived: ${schedule?.chapter || "Unknown chapter"}`, children: /* @__PURE__ */ u4("i", { class: "fa fa-check-square" }) }) : /* @__PURE__ */ u4("span", { class: "rr-list-status-icon rr-list-archived-icon", title: "Scheduled shoutout", children: /* @__PURE__ */ u4("i", { class: "far fa-square" }) }) }),
                   /* @__PURE__ */ u4("div", { class: "rr-archive-actions", children: /* @__PURE__ */ u4(
                     "button",
                     {
@@ -37969,6 +38020,52 @@
       )
     ] });
   }
+  function getSchedulePillState(sched) {
+    const wePosted = !!sched.chapter;
+    const theyPosted = !!sched.swappedDate;
+    const scanned = !!sched.lastSwapScanDate;
+    if (wePosted && theyPosted)
+      return "SWAPPED";
+    if (wePosted && !theyPosted && scanned)
+      return "NOT FOUND";
+    if (wePosted && !theyPosted && !scanned)
+      return "NOT SCANNED";
+    if (theyPosted)
+      return "SHOUTED";
+    return "SCHEDULED";
+  }
+  function SchedulePill({ state, sched }) {
+    const classByState = {
+      SWAPPED: "rr-swap-badge-swapped",
+      "NOT FOUND": "rr-swap-badge-not-found",
+      "NOT SCANNED": "rr-swap-badge-not-scanned",
+      SHOUTED: "rr-swap-badge-shouted",
+      SCHEDULED: "rr-swap-badge-scheduled"
+    };
+    const cls = classByState[state] || "rr-swap-badge-scheduled";
+    const clickable = state === "SWAPPED" && !!sched.swappedChapterUrl;
+    const titleParts = [state];
+    if (state === "SWAPPED" && sched.swappedChapter)
+      titleParts.push(`in "${sched.swappedChapter}"`);
+    if (state === "NOT FOUND" && sched.lastSwapScanDate)
+      titleParts.push(`scanned ${sched.lastSwapScanDate}`);
+    const title = titleParts.join(" \u2014 ");
+    if (clickable) {
+      return /* @__PURE__ */ u4(
+        "a",
+        {
+          class: `rr-swap-pill ${cls} rr-swap-badge-clickable`,
+          href: sched.swappedChapterUrl,
+          target: "_blank",
+          rel: "noopener",
+          title,
+          onClick: (e4) => e4.stopPropagation(),
+          children: state
+        }
+      );
+    }
+    return /* @__PURE__ */ u4("span", { class: `rr-swap-pill ${cls}`, title, children: state });
+  }
   function AuthorInfo({ info, loading, shoutout, schedules = [], myFictions = [], onCheckSwap, checkingSwap, checkProgress, swapResult }) {
     if (loading) {
       return /* @__PURE__ */ u4("div", { class: "rr-author-empty", children: "Loading..." });
@@ -37976,23 +38073,11 @@
     if (!info || !info.fictionTitle && !info.authorName) {
       return /* @__PURE__ */ u4("div", { class: "rr-author-empty", children: "Paste code to see author info" });
     }
-    const wePosted = shoutout?.schedules?.some((s4) => s4.chapter);
-    const theyReturned = !!shoutout?.swappedDate || swapResult?.found;
     const lastScan = shoutout?.lastSwapScanDate;
-    const justScanned = swapResult !== null && !swapResult?.error;
-    const foundChapter = shoutout?.swappedChapter || swapResult?.chapter;
-    const foundChapterUrl = shoutout?.swappedChapterUrl || swapResult?.chapterUrl;
-    const hasScanned = lastScan || justScanned;
-    let swapState = "SCHEDULED";
-    if (wePosted && theyReturned) {
-      swapState = "SWAPPED";
-    } else if (wePosted && !theyReturned && hasScanned) {
-      swapState = "NOT FOUND";
-    } else if (wePosted && !theyReturned && !hasScanned) {
-      swapState = "NOT SCANNED";
-    } else if (theyReturned) {
-      swapState = "SHOUTED";
-    }
+    const needsCheck = (schedules || []).some((s4) => {
+      const st = getSchedulePillState(s4);
+      return st === "NOT SCANNED" || st === "NOT FOUND" || st === "SCHEDULED" || st === "SHOUTED";
+    });
     return /* @__PURE__ */ u4("div", { class: "rr-author-card-large", children: [
       info.coverUrl && /* @__PURE__ */ u4("img", { src: info.coverUrl, alt: "", class: "rr-author-cover-large" }),
       /* @__PURE__ */ u4("div", { class: "rr-author-fiction-large", children: info.fictionTitle || "Unknown" }),
@@ -38010,11 +38095,12 @@
           const fiction = myFictions.find((f5) => String(f5.fictionId) === String(sched.fictionId));
           const fictionTitle = fiction?.title || `Fiction #${sched.fictionId}`;
           const isArchived = !!sched.chapter;
+          const state = getSchedulePillState(sched);
           return /* @__PURE__ */ u4("div", { class: `rr-scheduled-for-item ${isArchived ? "rr-archived" : ""}`, children: [
             /* @__PURE__ */ u4("span", { class: "rr-scheduled-fiction-title", children: fictionTitle }),
             sched.date && /* @__PURE__ */ u4("span", { class: "rr-scheduled-date", children: sched.date }),
             !sched.date && /* @__PURE__ */ u4("span", { class: "rr-scheduled-date rr-unscheduled", children: "Unscheduled" }),
-            isArchived && /* @__PURE__ */ u4("i", { class: "fa fa-check-circle rr-archived-icon", title: "Archived" })
+            shoutout && /* @__PURE__ */ u4(SchedulePill, { state, sched })
           ] }, idx);
         }) })
       ] }),
@@ -38040,54 +38126,26 @@
             ] }),
             /* @__PURE__ */ u4("div", { class: "rr-swap-progress-chapter", title: checkProgress.chapter, children: checkProgress.chapter })
           ] })
-        ] }) : swapState === "SWAPPED" ? /* @__PURE__ */ u4("div", { class: "rr-swap-badge rr-swap-badge-swapped", children: "SWAPPED" }) : swapState === "NOT FOUND" ? /* @__PURE__ */ u4(
+        ] }) : needsCheck ? /* @__PURE__ */ u4(
           "button",
           {
-            class: "rr-swap-badge rr-swap-badge-not-found rr-swap-badge-clickable",
+            class: "btn btn-sm btn-outline-primary rr-check-swap-btn",
             onClick: onCheckSwap,
-            title: "Click to check again",
-            children: "NOT FOUND"
+            title: "Scan their fiction for return shoutouts",
+            children: [
+              /* @__PURE__ */ u4("i", { class: "fa fa-search" }),
+              " Check for swap returns"
+            ]
           }
-        ) : swapState === "NOT SCANNED" ? /* @__PURE__ */ u4(
-          "button",
-          {
-            class: "rr-swap-badge rr-swap-badge-not-scanned rr-swap-badge-clickable",
-            onClick: onCheckSwap,
-            title: "Click to scan for their shoutout",
-            children: "NOT SCANNED"
-          }
-        ) : swapState === "SHOUTED" ? /* @__PURE__ */ u4(
-          "button",
-          {
-            class: "rr-swap-badge rr-swap-badge-shouted rr-swap-badge-clickable",
-            onClick: onCheckSwap,
-            title: "Click to verify",
-            children: "THEY SHOUTED YOU"
-          }
-        ) : /* @__PURE__ */ u4(
-          "button",
-          {
-            class: "rr-swap-badge rr-swap-badge-scheduled rr-swap-badge-clickable",
-            onClick: onCheckSwap,
-            title: "Click to check if they shouted you",
-            children: "SCHEDULED"
-          }
-        ),
-        lastScan && !checkingSwap && swapState !== "RETURNED" && /* @__PURE__ */ u4("div", { class: "rr-swap-last-scan", children: [
+        ) : null,
+        lastScan && !checkingSwap && /* @__PURE__ */ u4("div", { class: "rr-swap-last-scan", children: [
           "Last scan: ",
           lastScan
-        ] })
-      ] }),
-      foundChapter && /* @__PURE__ */ u4("div", { class: "rr-swap-found", children: [
-        /* @__PURE__ */ u4("div", { class: "rr-swap-found-label", children: [
-          /* @__PURE__ */ u4("i", { class: "fa fa-check-circle" }),
-          ' Found in "',
-          foundChapter,
-          '"'
         ] }),
-        foundChapterUrl && /* @__PURE__ */ u4("a", { href: foundChapterUrl, target: "_blank", rel: "noopener", class: "rr-swap-view-link", children: [
-          /* @__PURE__ */ u4("i", { class: "fa fa-external-link" }),
-          " View Chapter"
+        swapResult?.error && /* @__PURE__ */ u4("div", { class: "rr-swap-result rr-swap-not-found", children: [
+          /* @__PURE__ */ u4("i", { class: "fa fa-exclamation-circle" }),
+          " Error: ",
+          swapResult.error
         ] })
       ] })
     ] });
@@ -41808,6 +41866,108 @@
   margin-right: 0.25rem;
 }
 
+/* Stacked per-schedule lines inside an archive card \u2014 each line is a
+   content-width chip, not stretched across the row. */
+.rr-archive-schedule-lines {
+  margin-top: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+}
+
+.rr-archive-schedule-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  background: rgba(128, 128, 128, 0.07);
+  max-width: 100%;
+}
+
+.rr-archive-schedule-line.rr-schedule-swapped {
+  background: rgba(40, 167, 69, 0.1);
+}
+
+.rr-archive-schedule-line.rr-schedule-notfound {
+  background: rgba(220, 53, 69, 0.08);
+}
+
+.rr-archive-schedule-line.rr-schedule-notscanned {
+  background: rgba(128, 128, 128, 0.08);
+}
+
+.rr-archive-schedule-line.rr-schedule-scheduled {
+  background: rgba(230, 126, 34, 0.08);
+}
+
+.rr-schedule-scheduled .rr-schedule-swap-state {
+  background: rgba(230, 126, 34, 0.2);
+  color: #e67e22;
+}
+
+.rr-schedule-our-fiction {
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rr-schedule-our-fiction i {
+  margin-right: 0.25rem;
+  color: rgba(128, 128, 128, 0.7);
+}
+
+.rr-schedule-our-date {
+  color: rgba(128, 128, 128, 0.7);
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+
+.rr-schedule-swap-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.1rem 0.35rem;
+  background: rgba(40, 167, 69, 0.2);
+  border-radius: 3px;
+  color: #28a745;
+  text-decoration: none;
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+
+.rr-schedule-swap-link:hover {
+  background: rgba(40, 167, 69, 0.35);
+  text-decoration: none;
+}
+
+.rr-schedule-swap-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+
+.rr-schedule-notfound .rr-schedule-swap-state {
+  background: rgba(220, 53, 69, 0.15);
+  color: #dc3545;
+}
+
+.rr-schedule-notscanned .rr-schedule-swap-state {
+  background: rgba(128, 128, 128, 0.15);
+  color: rgba(200, 200, 200, 0.9);
+}
+
 /* Entry status icons */
 .rr-archive-entry-status {
   display: flex;
@@ -42070,7 +42230,7 @@
   var ContactModal_default = "/* Contact Modal - matches v1's contact modal styles */\n\n.rr-contact-modal-content {\n  display: flex;\n  flex-direction: column;\n  gap: 1.25rem;\n}\n\n.rr-contact-modal-header {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  text-align: center;\n  gap: 0.5rem;\n}\n\n.rr-contact-modal-avatar {\n  width: 72px;\n  height: 72px;\n  border-radius: 50%;\n  object-fit: cover;\n}\n\n.rr-contact-modal-avatar.rr-contact-avatar-placeholder {\n  background: rgba(128, 128, 128, 0.2);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 1.8rem;\n  font-weight: 600;\n}\n\n.rr-contact-modal-name {\n  font-size: 1.1rem;\n  font-weight: 600;\n}\n\n.rr-contact-modal-links {\n  display: flex;\n  gap: 0.5rem;\n  justify-content: center;\n}\n\n.rr-contact-modal-links .btn {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 0.4rem;\n}\n\n/* Loading state */\n.rr-contact-loading {\n  padding: 1rem;\n  text-align: center;\n  opacity: 0.6;\n}\n\n/* Fiction section */\n.rr-contact-fiction-section {\n  padding-top: 0.75rem;\n  border-top: 1px solid rgba(128, 128, 128, 0.15);\n}\n\n.rr-section-label {\n  display: block;\n  font-size: 0.75rem;\n  font-weight: 600;\n  text-transform: uppercase;\n  opacity: 0.6;\n  margin-bottom: 0.5rem;\n}\n\n.rr-contact-fiction-card {\n  display: flex;\n  align-items: center;\n  gap: 0.75rem;\n  padding: 0.5rem;\n  border: 1px solid rgba(128, 128, 128, 0.2);\n  border-radius: 6px;\n  text-decoration: none;\n  color: inherit;\n  transition: background 0.2s;\n}\n\n.rr-contact-fiction-card:hover {\n  background: rgba(128, 128, 128, 0.1);\n  text-decoration: none;\n  color: inherit;\n}\n\n.rr-contact-fiction-card + .rr-contact-fiction-card {\n  margin-top: 0.5rem;\n}\n\n.rr-fiction-cover {\n  width: 40px;\n  height: 60px;\n  object-fit: cover;\n  border-radius: 4px;\n  flex-shrink: 0;\n}\n\n.rr-fiction-cover.rr-fiction-cover-placeholder {\n  background: rgba(128, 128, 128, 0.2);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 1.2rem;\n  font-weight: 600;\n  color: rgba(128, 128, 128, 0.6);\n}\n\n.rr-fiction-info {\n  flex: 1;\n  min-width: 0;\n}\n\n.rr-fiction-title {\n  font-size: 0.9rem;\n  font-weight: 500;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.rr-fiction-stats {\n  display: flex;\n  gap: 0.75rem;\n  margin-top: 0.25rem;\n}\n\n.rr-fiction-stat {\n  font-size: 0.7rem;\n  display: flex;\n  align-items: center;\n  gap: 0.25rem;\n}\n\n.rr-fiction-stat.rr-stat-archived {\n  color: #28a745;\n}\n\n.rr-fiction-stat.rr-stat-pending {\n  color: #e67e22;\n}\n\n.rr-fiction-dates {\n  font-size: 0.7rem;\n  opacity: 0.6;\n  margin-top: 0.15rem;\n}\n\n.rr-fiction-date {\n  font-size: 0.75rem;\n  opacity: 0.7;\n  margin-top: 0.15rem;\n}\n\n/* Contact methods (discord, email) */\n.rr-contact-methods {\n  display: flex;\n  flex-direction: column;\n  gap: 0.75rem;\n  padding-top: 1rem;\n  border-top: 1px solid rgba(128, 128, 128, 0.15);\n}\n\n.rr-contact-method {\n  display: flex;\n  align-items: center;\n  gap: 0.75rem;\n}\n\n.rr-method-icon {\n  width: 24px;\n  text-align: center;\n  font-size: 1.1rem;\n}\n\n.rr-method-icon.fa-discord {\n  color: #5865F2;\n}\n\n.rr-method-icon.fa-envelope {\n  color: #ea4335;\n}\n\n.rr-contact-method input {\n  flex: 1;\n  padding: 0.5rem 0.75rem;\n  font-size: 0.9rem;\n  border: 1px solid rgba(128, 128, 128, 0.3);\n  border-radius: 4px;\n  background: transparent;\n  color: inherit;\n}\n\n.rr-discord-fields {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  flex: 1;\n}\n\n.rr-contact-value {\n  flex: 1;\n  font-size: 0.9rem;\n}\n\n.rr-contact-value a {\n  color: #337ab7;\n  text-decoration: none;\n}\n\n.rr-contact-value a:hover {\n  text-decoration: underline;\n}\n\n.rr-discord-link {\n  color: #5865F2;\n}\n\n.rr-contact-empty-value {\n  opacity: 0.4;\n  font-style: italic;\n}\n";
 
   // src/shout_out_swapper/ui/modal/ShoutoutModal.css
-  var ShoutoutModal_default = "/* Shoutout Modal Styles - matches v1 */\n\n/* Override base modal for shoutout xlarge */\n.rr-modal.rr-modal-xlarge {\n  width: auto;\n  min-width: 400px;\n  max-width: min(95vw, 850px);\n  max-height: 90vh;\n}\n\n.rr-modal.rr-modal-xlarge .rr-modal-body {\n  overflow: auto;\n}\n\n/* Modal date header */\n.rr-modal-date {\n  font-weight: 500;\n  margin-bottom: 1rem;\n  font-size: 1.1rem;\n}\n\n/* Edit mode layout - Code LEFT, Author RIGHT */\n.rr-modal-edit-layout {\n  display: flex;\n  gap: 1.5rem;\n  flex-wrap: wrap;\n}\n\n.rr-modal-edit-code {\n  flex: 1 1 300px;\n  display: flex;\n  flex-direction: column;\n  min-width: 0;\n  max-width: 100%;\n}\n\n/* Fixed height for textarea, auto for preview */\n.rr-textarea-wrapper {\n  height: 150px;\n  min-height: 150px;\n  max-height: 150px;\n}\n\n.rr-modal-preview-container {\n  margin-top: 0.5rem;\n  margin-bottom: 1rem;\n  padding: 1rem;\n  border: 1px solid rgba(128, 128, 128, 0.2);\n  border-radius: 8px;\n  max-height: 300px;\n  overflow-y: auto;\n}\n\n.rr-modal-code-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  margin-bottom: 0.5rem;\n}\n\n.rr-modal-code-header .rr-modal-label {\n  margin-bottom: 0;\n}\n\n.rr-modal-code-buttons {\n  display: flex;\n  gap: 0.5rem;\n}\n\n/* Toggle button badges */\n.rr-modal-code-toggles {\n  display: flex;\n  gap: 0.25rem;\n}\n\n.rr-toggle-btn {\n  width: 28px;\n  height: 28px;\n  padding: 0;\n  border: 1px solid rgba(128, 128, 128, 0.3);\n  border-radius: 4px;\n  background: transparent;\n  color: rgba(128, 128, 128, 0.6);\n  cursor: pointer;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 0.85rem;\n  transition: all 0.15s;\n}\n\n.rr-toggle-btn:hover {\n  background: rgba(128, 128, 128, 0.1);\n  color: inherit;\n}\n\n.rr-toggle-btn.active {\n  background: #337ab7;\n  border-color: #337ab7;\n  color: #fff;\n}\n\n/* Textarea with line numbers - matches v1 */\n.rr-textarea-wrapper {\n  display: flex;\n  border: 1px solid rgba(128, 128, 128, 0.3);\n  border-radius: 4px;\n  overflow: hidden;\n}\n\n.rr-line-numbers {\n  background: rgba(128, 128, 128, 0.1);\n  padding: 0.5rem;\n  font-family: monospace;\n  font-size: 0.85rem;\n  line-height: 1.5;\n  color: rgba(128, 128, 128, 0.7);\n  text-align: right;\n  user-select: none;\n  min-width: 40px;\n  min-height: 150px;\n  max-height: 150px;\n  overflow: hidden;\n}\n\n.rr-line-numbers div {\n  height: 1.5em;\n}\n\n.rr-modal-textarea {\n  min-height: 150px;\n  max-height: 150px;\n  flex: 1;\n  resize: none;\n  font-family: monospace;\n  font-size: 0.85rem;\n  line-height: 1.5;\n  border: none;\n  border-radius: 0;\n  padding: 0.5rem;\n  background: transparent;\n}\n\n.rr-modal-textarea:focus {\n  outline: none;\n  box-shadow: none;\n}\n\n/* Preview content */\n.rr-modal-preview {\n  min-height: 100px;\n}\n\n/* Author panel */\n.rr-modal-author-panel {\n  flex: 0 1 auto;\n  width: clamp(180px, 35%, 280px);\n  min-width: 180px;\n  border: 1px solid rgba(128, 128, 128, 0.2);\n  border-radius: 8px;\n  min-height: 150px;\n  display: flex;\n  flex-direction: column;\n  overflow: hidden;\n}\n\n.rr-author-empty {\n  flex: 1;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  color: rgba(128, 128, 128, 0.5);\n  text-align: center;\n  padding: 1rem;\n}\n\n.rr-author-card {\n  padding: 1rem;\n}\n\n.rr-author-cover {\n  width: 100%;\n  max-width: 150px;\n  height: auto;\n  border-radius: 4px;\n  margin-bottom: 0.75rem;\n}\n\n.rr-author-info {\n  display: flex;\n  flex-direction: column;\n  gap: 0.25rem;\n}\n\n.rr-author-fiction {\n  font-weight: 600;\n  font-size: 0.95rem;\n}\n\n.rr-author-name {\n  font-size: 0.85rem;\n  color: rgba(128, 128, 128, 0.7);\n}\n\n.rr-author-name a {\n  color: inherit;\n  text-decoration: underline;\n}\n\n.rr-author-name a:hover {\n  color: #fff;\n}\n\n/* Large author card for modal */\n.rr-author-card-large {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  text-align: center;\n  padding: clamp(0.75rem, 3vw, 1.5rem);\n  gap: 0.5rem;\n}\n\n.rr-author-cover-large {\n  width: clamp(80px, 50%, 120px);\n  height: auto;\n  aspect-ratio: 120 / 170;\n  object-fit: cover;\n  border-radius: 6px;\n  margin-bottom: 0.5rem;\n}\n\n.rr-author-fiction-large {\n  font-weight: 600;\n  font-size: clamp(0.9rem, 2.5vw, 1.1rem);\n  word-break: break-word;\n}\n\n.rr-view-fiction-btn {\n  margin-top: 0.75rem;\n}\n\n/* Scheduled for section in author panel */\n.rr-scheduled-for-section {\n  margin-top: 1rem;\n  padding-top: 1rem;\n  border-top: 1px solid rgba(128, 128, 128, 0.2);\n  text-align: left;\n  width: 100%;\n}\n\n.rr-scheduled-for-label {\n  font-size: 0.75rem;\n  font-weight: 600;\n  text-transform: uppercase;\n  color: rgba(128, 128, 128, 0.7);\n  margin-bottom: 0.5rem;\n}\n\n.rr-scheduled-for-list {\n  display: flex;\n  flex-direction: column;\n  gap: 0.35rem;\n}\n\n.rr-scheduled-for-item {\n  display: flex;\n  align-items: center;\n  flex-wrap: wrap;\n  gap: 0.25rem 0.5rem;\n  padding: 0.35rem 0.5rem;\n  background: rgba(51, 122, 183, 0.1);\n  border-radius: 4px;\n  font-size: clamp(0.7rem, 2vw, 0.8rem);\n}\n\n.rr-scheduled-for-item.rr-archived {\n  background: rgba(40, 167, 69, 0.1);\n}\n\n.rr-scheduled-fiction-title {\n  font-weight: 500;\n  flex: 1 1 100%;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.rr-scheduled-date {\n  color: rgba(128, 128, 128, 0.7);\n  font-size: 0.75rem;\n  flex-shrink: 0;\n}\n\n.rr-scheduled-date.rr-unscheduled {\n  color: #ffc107;\n  font-style: italic;\n}\n\n.rr-archived-icon {\n  color: #28a745;\n  flex-shrink: 0;\n}\n\n/* Expected date row */\n.rr-expected-date-row {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n}\n\n.rr-expected-date-row .rr-modal-label {\n  margin-bottom: 0;\n  white-space: nowrap;\n}\n\n/* Schedules section */\n.rr-schedules-section {\n  margin-top: 1rem;\n}\n\n.rr-schedules-list {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 0.5rem;\n  margin-top: 0.5rem;\n  align-items: center;\n}\n\n.rr-schedule-tag {\n  display: inline-flex;\n  align-items: center;\n  gap: 0.5rem;\n  padding: 0.35rem 0.5rem 0.35rem 0.75rem;\n  background: rgba(128, 128, 128, 0.1);\n  border: 1px solid rgba(128, 128, 128, 0.15);\n  border-radius: 4px;\n  font-size: 0.85rem;\n}\n\n.rr-schedule-fiction {\n  font-weight: 500;\n}\n\n.rr-schedule-date {\n  color: rgba(128, 128, 128, 0.7);\n}\n\n.rr-schedule-date-input {\n  background: rgba(128, 128, 128, 0.1);\n  border: 1px solid rgba(128, 128, 128, 0.2);\n  border-radius: 3px;\n  color: inherit;\n  font-size: 0.8rem;\n  padding: 0.15rem 0.35rem;\n  cursor: pointer;\n}\n\n.rr-schedule-date-input:hover {\n  border-color: rgba(128, 128, 128, 0.4);\n}\n\n.rr-schedule-date-input:focus {\n  outline: none;\n  border-color: #337ab7;\n}\n\n.rr-schedule-tag.rr-schedule-archived {\n  background: rgba(40, 167, 69, 0.1);\n  border-color: rgba(40, 167, 69, 0.2);\n}\n\n.rr-schedule-archived-icon {\n  color: #28a745;\n  font-size: 0.75rem;\n}\n\n.rr-schedule-remove {\n  background: transparent;\n  border: none;\n  color: rgba(128, 128, 128, 0.5);\n  cursor: pointer;\n  padding: 0 0.25rem;\n  font-size: 1.1rem;\n  line-height: 1;\n}\n\n.rr-schedule-remove:hover {\n  color: #dc3545;\n}\n\n.rr-schedule-add {\n  display: flex;\n  gap: 0.5rem;\n  margin-top: 0.5rem;\n  align-items: center;\n}\n\n.rr-schedule-show-add-btn {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 28px;\n  height: 28px;\n  background: transparent;\n  border: 1px dashed rgba(128, 128, 128, 0.3);\n  border-radius: 4px;\n  color: rgba(128, 128, 128, 0.5);\n  cursor: pointer;\n  font-size: 1.2rem;\n  transition: all 0.15s;\n}\n\n.rr-schedule-show-add-btn:hover {\n  border-color: rgba(128, 128, 128, 0.5);\n  color: inherit;\n}\n\n.rr-no-schedules {\n  color: rgba(128, 128, 128, 0.5);\n  font-size: 0.85rem;\n  font-style: italic;\n}\n\n/* My Code fields */\n.rr-mycode-fields {\n  margin-top: 1rem;\n  display: flex;\n  flex-direction: column;\n  gap: 0.75rem;\n}\n\n.rr-mycode-name-field {\n  opacity: 0.7;\n}\n\n.rr-optional-label {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n}\n\n.rr-optional-hint {\n  font-weight: 400;\n  font-size: 0.7rem;\n  opacity: 0.6;\n}\n\n/* Button alignment helper */\n.me-auto {\n  margin-right: auto;\n}\n\n/* View Mode Styles */\n.rr-shoutout-view {\n  display: flex;\n  flex-direction: column;\n  gap: 1.5rem;\n}\n\n.rr-view-header {\n  display: flex;\n  gap: 1rem;\n}\n\n.rr-view-cover {\n  width: 100px;\n  height: 140px;\n  flex-shrink: 0;\n  border-radius: 4px;\n  overflow: hidden;\n  background: rgba(128, 128, 128, 0.1);\n}\n\n.rr-view-cover img {\n  width: 100%;\n  height: 100%;\n  object-fit: cover;\n}\n\n.rr-view-cover-placeholder {\n  width: 100%;\n  height: 100%;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 2rem;\n  color: rgba(128, 128, 128, 0.3);\n}\n\n.rr-view-info {\n  display: flex;\n  flex-direction: column;\n  gap: 0.25rem;\n}\n\n.rr-view-title {\n  font-weight: 600;\n  font-size: 1.2rem;\n}\n\n.rr-view-author {\n  color: rgba(128, 128, 128, 0.7);\n}\n\n.rr-view-link {\n  margin-top: 0.5rem;\n  color: #337ab7;\n  text-decoration: none;\n}\n\n.rr-view-link:hover {\n  text-decoration: underline;\n}\n\n.rr-view-details {\n  display: flex;\n  flex-direction: column;\n  gap: 0.75rem;\n}\n\n.rr-view-row {\n  display: flex;\n  align-items: center;\n  gap: 0.75rem;\n}\n\n.rr-view-row .rr-label {\n  font-weight: 500;\n  min-width: 120px;\n  color: rgba(128, 128, 128, 0.7);\n}\n\n.rr-view-code {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n}\n\n.rr-view-code .rr-label {\n  font-weight: 500;\n  color: rgba(128, 128, 128, 0.7);\n}\n\n.rr-code-preview {\n  padding: 1rem;\n  border: 1px solid rgba(128, 128, 128, 0.2);\n  border-radius: 8px;\n  max-height: 300px;\n  overflow-y: auto;\n}\n\n/* Go to Chapter button */\n.rr-goto-chapter-btn {\n  margin-top: 1rem;\n}\n\n.rr-goto-chapter-btn i {\n  margin-right: 0.25rem;\n}\n\n/* Swap Section in Author Panel */\n.rr-swap-section {\n  margin-top: 1rem;\n  padding-top: 1rem;\n  border-top: 1px solid rgba(128, 128, 128, 0.2);\n  text-align: center;\n}\n\n.rr-swap-badge {\n  display: inline-block;\n  padding: 0.25rem 0.5rem;\n  border-radius: 4px;\n  font-size: clamp(0.65rem, 2vw, 0.75rem);\n  font-weight: 600;\n  text-transform: uppercase;\n  letter-spacing: 0.5px;\n}\n\n/* We posted their shoutout (green) */\n.rr-swap-badge-swapped {\n  background: rgba(40, 167, 69, 0.2);\n  color: #28a745;\n  border: 1px solid #28a745;\n}\n\n/* Both posted - swap complete (cyan) */\n.rr-swap-badge-returned {\n  background: rgba(23, 162, 184, 0.2);\n  color: #17a2b8;\n  border: 1px solid #17a2b8;\n}\n\n/* We posted, scanned, they didn't return (red) */\n.rr-swap-badge-not-found {\n  background: rgba(220, 53, 69, 0.2);\n  color: #dc3545;\n  border: 1px solid #dc3545;\n}\n\n/* They shouted us first (cyan) */\n.rr-swap-badge-shouted {\n  background: rgba(23, 162, 184, 0.2);\n  color: #17a2b8;\n  border: 1px solid #17a2b8;\n}\n\n/* Scheduled but not posted yet (orange) */\n.rr-swap-badge-scheduled {\n  background: rgba(230, 126, 34, 0.2);\n  color: #e67e22;\n  border: 1px solid #e67e22;\n}\n\n.rr-swap-badge-clickable {\n  cursor: pointer;\n  transition: all 0.15s;\n}\n\n.rr-swap-badge-clickable:hover {\n  background: rgba(255, 193, 7, 0.4);\n  transform: scale(1.05);\n}\n\n.rr-swap-badge-checking {\n  background: rgba(23, 162, 184, 0.2);\n  color: #17a2b8;\n  border: 1px solid #17a2b8;\n}\n\n.rr-swap-badge-checking i {\n  margin-right: 0.25rem;\n}\n\n.rr-swap-checking {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 0.5rem;\n  width: 100%;\n  padding: 0 1rem;\n}\n\n.rr-swap-progress-bar {\n  width: 100%;\n  height: 6px;\n  background: rgba(128, 128, 128, 0.2);\n  border-radius: 3px;\n  overflow: hidden;\n}\n\n.rr-swap-progress-fill {\n  height: 100%;\n  background: #17a2b8;\n  border-radius: 3px;\n  transition: width 0.3s ease;\n}\n\n.rr-swap-progress-text {\n  font-size: 0.75rem;\n  color: rgba(128, 128, 128, 0.9);\n}\n\n.rr-swap-progress-chapter {\n  font-size: 0.7rem;\n  color: rgba(128, 128, 128, 0.6);\n  max-width: 100%;\n  text-align: center;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.rr-swap-last-scan {\n  font-size: 0.75rem;\n  color: rgba(128, 128, 128, 0.7);\n  margin-top: 0.5rem;\n}\n\n.rr-check-swap-btn {\n  margin-top: 0.5rem;\n}\n\n/* Swap Found Info */\n.rr-swap-found {\n  margin-top: 1rem;\n  padding: clamp(0.5rem, 2vw, 0.75rem);\n  background: rgba(40, 167, 69, 0.1);\n  border-radius: 6px;\n  border: 1px solid rgba(40, 167, 69, 0.3);\n  word-break: break-word;\n}\n\n.rr-swap-found-label {\n  font-size: clamp(0.75rem, 2vw, 0.85rem);\n  color: #28a745;\n}\n\n.rr-swap-found-label i {\n  margin-right: 0.25rem;\n}\n\n.rr-swap-view-link {\n  display: inline-flex;\n  align-items: center;\n  gap: 0.25rem;\n  margin-top: 0.5rem;\n  color: #337ab7;\n  text-decoration: none;\n  font-size: 0.85rem;\n}\n\n.rr-swap-view-link:hover {\n  text-decoration: underline;\n}\n\n/* Swap Result (error only now) */\n.rr-swap-result {\n  padding: 0.5rem 0.75rem;\n  border-radius: 4px;\n  font-size: 0.85rem;\n  margin-top: 0.5rem;\n}\n\n.rr-swap-result.rr-swap-not-found {\n  background: rgba(220, 53, 69, 0.1);\n  color: #dc3545;\n}\n\n.rr-swap-result i {\n  margin-right: 0.25rem;\n}\n\n/* Responsive */\n@media (max-width: 768px) {\n  .rr-modal.rr-modal-xlarge {\n    min-width: unset;\n    width: 95vw;\n  }\n  .rr-modal-edit-layout {\n    flex-direction: column;\n  }\n  .rr-modal-author-panel {\n    width: 100%;\n    max-width: 100%;\n  }\n  .rr-author-card-large {\n    flex-direction: row;\n    flex-wrap: wrap;\n    justify-content: center;\n    gap: 1rem;\n  }\n  .rr-author-cover-large {\n    width: 80px;\n    flex-shrink: 0;\n  }\n  .rr-scheduled-for-section {\n    width: 100%;\n  }\n  .rr-swap-section {\n    width: 100%;\n  }\n}\n\n@media (max-width: 600px) {\n  .rr-modal-preview-container {\n    max-height: 200px;\n  }\n  .rr-author-card-large {\n    flex-direction: column;\n  }\n}\n";
+  var ShoutoutModal_default = "/* Shoutout Modal Styles - matches v1 */\n\n/* Override base modal for shoutout xlarge */\n.rr-modal.rr-modal-xlarge {\n  width: auto;\n  min-width: 400px;\n  max-width: min(95vw, 850px);\n  max-height: 90vh;\n}\n\n.rr-modal.rr-modal-xlarge .rr-modal-body {\n  overflow: auto;\n}\n\n/* Modal date header */\n.rr-modal-date {\n  font-weight: 500;\n  margin-bottom: 1rem;\n  font-size: 1.1rem;\n}\n\n/* Edit mode layout - Code LEFT, Author RIGHT */\n.rr-modal-edit-layout {\n  display: flex;\n  gap: 1.5rem;\n  flex-wrap: wrap;\n}\n\n.rr-modal-edit-code {\n  flex: 1 1 300px;\n  display: flex;\n  flex-direction: column;\n  min-width: 0;\n  max-width: 100%;\n}\n\n/* Fixed height for textarea, auto for preview */\n.rr-textarea-wrapper {\n  height: 150px;\n  min-height: 150px;\n  max-height: 150px;\n}\n\n.rr-modal-preview-container {\n  margin-top: 0.5rem;\n  margin-bottom: 1rem;\n  padding: 1rem;\n  border: 1px solid rgba(128, 128, 128, 0.2);\n  border-radius: 8px;\n  max-height: 300px;\n  overflow-y: auto;\n}\n\n.rr-modal-code-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  margin-bottom: 0.5rem;\n}\n\n.rr-modal-code-header .rr-modal-label {\n  margin-bottom: 0;\n}\n\n.rr-modal-code-buttons {\n  display: flex;\n  gap: 0.5rem;\n}\n\n/* Toggle button badges */\n.rr-modal-code-toggles {\n  display: flex;\n  gap: 0.25rem;\n}\n\n.rr-toggle-btn {\n  width: 28px;\n  height: 28px;\n  padding: 0;\n  border: 1px solid rgba(128, 128, 128, 0.3);\n  border-radius: 4px;\n  background: transparent;\n  color: rgba(128, 128, 128, 0.6);\n  cursor: pointer;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 0.85rem;\n  transition: all 0.15s;\n}\n\n.rr-toggle-btn:hover {\n  background: rgba(128, 128, 128, 0.1);\n  color: inherit;\n}\n\n.rr-toggle-btn.active {\n  background: #337ab7;\n  border-color: #337ab7;\n  color: #fff;\n}\n\n/* Textarea with line numbers - matches v1 */\n.rr-textarea-wrapper {\n  display: flex;\n  border: 1px solid rgba(128, 128, 128, 0.3);\n  border-radius: 4px;\n  overflow: hidden;\n}\n\n.rr-line-numbers {\n  background: rgba(128, 128, 128, 0.1);\n  padding: 0.5rem;\n  font-family: monospace;\n  font-size: 0.85rem;\n  line-height: 1.5;\n  color: rgba(128, 128, 128, 0.7);\n  text-align: right;\n  user-select: none;\n  min-width: 40px;\n  min-height: 150px;\n  max-height: 150px;\n  overflow: hidden;\n}\n\n.rr-line-numbers div {\n  height: 1.5em;\n}\n\n.rr-modal-textarea {\n  min-height: 150px;\n  max-height: 150px;\n  flex: 1;\n  resize: none;\n  font-family: monospace;\n  font-size: 0.85rem;\n  line-height: 1.5;\n  border: none;\n  border-radius: 0;\n  padding: 0.5rem;\n  background: transparent;\n}\n\n.rr-modal-textarea:focus {\n  outline: none;\n  box-shadow: none;\n}\n\n/* Preview content */\n.rr-modal-preview {\n  min-height: 100px;\n}\n\n/* Author panel */\n.rr-modal-author-panel {\n  flex: 0 1 auto;\n  width: clamp(180px, 35%, 280px);\n  min-width: 180px;\n  border: 1px solid rgba(128, 128, 128, 0.2);\n  border-radius: 8px;\n  min-height: 150px;\n  display: flex;\n  flex-direction: column;\n  overflow: hidden;\n}\n\n.rr-author-empty {\n  flex: 1;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  color: rgba(128, 128, 128, 0.5);\n  text-align: center;\n  padding: 1rem;\n}\n\n.rr-author-card {\n  padding: 1rem;\n}\n\n.rr-author-cover {\n  width: 100%;\n  max-width: 150px;\n  height: auto;\n  border-radius: 4px;\n  margin-bottom: 0.75rem;\n}\n\n.rr-author-info {\n  display: flex;\n  flex-direction: column;\n  gap: 0.25rem;\n}\n\n.rr-author-fiction {\n  font-weight: 600;\n  font-size: 0.95rem;\n}\n\n.rr-author-name {\n  font-size: 0.85rem;\n  color: rgba(128, 128, 128, 0.7);\n}\n\n.rr-author-name a {\n  color: inherit;\n  text-decoration: underline;\n}\n\n.rr-author-name a:hover {\n  color: #fff;\n}\n\n/* Large author card for modal */\n.rr-author-card-large {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  text-align: center;\n  padding: clamp(0.75rem, 3vw, 1.5rem);\n  gap: 0.5rem;\n}\n\n.rr-author-cover-large {\n  width: clamp(80px, 50%, 120px);\n  height: auto;\n  aspect-ratio: 120 / 170;\n  object-fit: cover;\n  border-radius: 6px;\n  margin-bottom: 0.5rem;\n}\n\n.rr-author-fiction-large {\n  font-weight: 600;\n  font-size: clamp(0.9rem, 2.5vw, 1.1rem);\n  word-break: break-word;\n}\n\n.rr-view-fiction-btn {\n  margin-top: 0.75rem;\n}\n\n/* Scheduled for section in author panel */\n.rr-scheduled-for-section {\n  margin-top: 1rem;\n  padding-top: 1rem;\n  border-top: 1px solid rgba(128, 128, 128, 0.2);\n  text-align: left;\n  width: 100%;\n}\n\n.rr-scheduled-for-label {\n  font-size: 0.75rem;\n  font-weight: 600;\n  text-transform: uppercase;\n  color: rgba(128, 128, 128, 0.7);\n  margin-bottom: 0.5rem;\n}\n\n.rr-scheduled-for-list {\n  display: flex;\n  flex-direction: column;\n  gap: 0.35rem;\n}\n\n.rr-scheduled-for-item {\n  display: flex;\n  align-items: center;\n  flex-wrap: wrap;\n  gap: 0.25rem 0.5rem;\n  padding: 0.35rem 0.5rem;\n  background: rgba(51, 122, 183, 0.1);\n  border-radius: 4px;\n  font-size: clamp(0.7rem, 2vw, 0.8rem);\n}\n\n.rr-scheduled-for-item.rr-archived {\n  background: rgba(40, 167, 69, 0.1);\n}\n\n.rr-scheduled-fiction-title {\n  font-weight: 500;\n  flex: 1 1 100%;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.rr-scheduled-date {\n  color: rgba(128, 128, 128, 0.7);\n  font-size: 0.75rem;\n  flex-shrink: 0;\n}\n\n.rr-scheduled-date.rr-unscheduled {\n  color: #ffc107;\n  font-style: italic;\n}\n\n.rr-archived-icon {\n  color: #28a745;\n  flex-shrink: 0;\n}\n\n/* Per-schedule swap pill (inline inside rr-scheduled-for-item) */\n.rr-swap-pill {\n  display: inline-flex;\n  align-items: center;\n  padding: 0.1rem 0.4rem;\n  border-radius: 3px;\n  font-size: 0.6rem;\n  font-weight: 700;\n  text-transform: uppercase;\n  letter-spacing: 0.5px;\n  line-height: 1.4;\n  flex-shrink: 0;\n  text-decoration: none;\n}\n\n.rr-swap-pill:hover {\n  text-decoration: none;\n}\n\n.rr-swap-pill.rr-swap-badge-clickable:hover {\n  filter: brightness(1.2);\n  transform: scale(1.05);\n}\n\n/* Expected date row */\n.rr-expected-date-row {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n}\n\n.rr-expected-date-row .rr-modal-label {\n  margin-bottom: 0;\n  white-space: nowrap;\n}\n\n/* Schedules section */\n.rr-schedules-section {\n  margin-top: 1rem;\n}\n\n.rr-schedules-list {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 0.5rem;\n  margin-top: 0.5rem;\n  align-items: center;\n}\n\n.rr-schedule-tag {\n  display: inline-flex;\n  align-items: center;\n  gap: 0.5rem;\n  padding: 0.35rem 0.5rem 0.35rem 0.75rem;\n  background: rgba(128, 128, 128, 0.1);\n  border: 1px solid rgba(128, 128, 128, 0.15);\n  border-radius: 4px;\n  font-size: 0.85rem;\n}\n\n.rr-schedule-fiction {\n  font-weight: 500;\n}\n\n.rr-schedule-date {\n  color: rgba(128, 128, 128, 0.7);\n}\n\n.rr-schedule-date-input {\n  background: rgba(128, 128, 128, 0.1);\n  border: 1px solid rgba(128, 128, 128, 0.2);\n  border-radius: 3px;\n  color: inherit;\n  font-size: 0.8rem;\n  padding: 0.15rem 0.35rem;\n  cursor: pointer;\n}\n\n.rr-schedule-date-input:hover {\n  border-color: rgba(128, 128, 128, 0.4);\n}\n\n.rr-schedule-date-input:focus {\n  outline: none;\n  border-color: #337ab7;\n}\n\n.rr-schedule-tag.rr-schedule-archived {\n  background: rgba(40, 167, 69, 0.1);\n  border-color: rgba(40, 167, 69, 0.2);\n}\n\n.rr-schedule-archived-icon {\n  color: #28a745;\n  font-size: 0.75rem;\n}\n\n.rr-schedule-remove {\n  background: transparent;\n  border: none;\n  color: rgba(128, 128, 128, 0.5);\n  cursor: pointer;\n  padding: 0 0.25rem;\n  font-size: 1.1rem;\n  line-height: 1;\n}\n\n.rr-schedule-remove:hover {\n  color: #dc3545;\n}\n\n.rr-schedule-add {\n  display: flex;\n  gap: 0.5rem;\n  margin-top: 0.5rem;\n  align-items: center;\n}\n\n.rr-schedule-show-add-btn {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 28px;\n  height: 28px;\n  background: transparent;\n  border: 1px dashed rgba(128, 128, 128, 0.3);\n  border-radius: 4px;\n  color: rgba(128, 128, 128, 0.5);\n  cursor: pointer;\n  font-size: 1.2rem;\n  transition: all 0.15s;\n}\n\n.rr-schedule-show-add-btn:hover {\n  border-color: rgba(128, 128, 128, 0.5);\n  color: inherit;\n}\n\n.rr-no-schedules {\n  color: rgba(128, 128, 128, 0.5);\n  font-size: 0.85rem;\n  font-style: italic;\n}\n\n/* My Code fields */\n.rr-mycode-fields {\n  margin-top: 1rem;\n  display: flex;\n  flex-direction: column;\n  gap: 0.75rem;\n}\n\n.rr-mycode-name-field {\n  opacity: 0.7;\n}\n\n.rr-optional-label {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n}\n\n.rr-optional-hint {\n  font-weight: 400;\n  font-size: 0.7rem;\n  opacity: 0.6;\n}\n\n/* Button alignment helper */\n.me-auto {\n  margin-right: auto;\n}\n\n/* View Mode Styles */\n.rr-shoutout-view {\n  display: flex;\n  flex-direction: column;\n  gap: 1.5rem;\n}\n\n.rr-view-header {\n  display: flex;\n  gap: 1rem;\n}\n\n.rr-view-cover {\n  width: 100px;\n  height: 140px;\n  flex-shrink: 0;\n  border-radius: 4px;\n  overflow: hidden;\n  background: rgba(128, 128, 128, 0.1);\n}\n\n.rr-view-cover img {\n  width: 100%;\n  height: 100%;\n  object-fit: cover;\n}\n\n.rr-view-cover-placeholder {\n  width: 100%;\n  height: 100%;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 2rem;\n  color: rgba(128, 128, 128, 0.3);\n}\n\n.rr-view-info {\n  display: flex;\n  flex-direction: column;\n  gap: 0.25rem;\n}\n\n.rr-view-title {\n  font-weight: 600;\n  font-size: 1.2rem;\n}\n\n.rr-view-author {\n  color: rgba(128, 128, 128, 0.7);\n}\n\n.rr-view-link {\n  margin-top: 0.5rem;\n  color: #337ab7;\n  text-decoration: none;\n}\n\n.rr-view-link:hover {\n  text-decoration: underline;\n}\n\n.rr-view-details {\n  display: flex;\n  flex-direction: column;\n  gap: 0.75rem;\n}\n\n.rr-view-row {\n  display: flex;\n  align-items: center;\n  gap: 0.75rem;\n}\n\n.rr-view-row .rr-label {\n  font-weight: 500;\n  min-width: 120px;\n  color: rgba(128, 128, 128, 0.7);\n}\n\n.rr-view-code {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n}\n\n.rr-view-code .rr-label {\n  font-weight: 500;\n  color: rgba(128, 128, 128, 0.7);\n}\n\n.rr-code-preview {\n  padding: 1rem;\n  border: 1px solid rgba(128, 128, 128, 0.2);\n  border-radius: 8px;\n  max-height: 300px;\n  overflow-y: auto;\n}\n\n/* Go to Chapter button */\n.rr-goto-chapter-btn {\n  margin-top: 1rem;\n}\n\n.rr-goto-chapter-btn i {\n  margin-right: 0.25rem;\n}\n\n/* Swap Section in Author Panel */\n.rr-swap-section {\n  margin-top: 1rem;\n  padding-top: 1rem;\n  border-top: 1px solid rgba(128, 128, 128, 0.2);\n  text-align: center;\n}\n\n.rr-swap-badge {\n  display: inline-block;\n  padding: 0.25rem 0.5rem;\n  border-radius: 4px;\n  font-size: clamp(0.65rem, 2vw, 0.75rem);\n  font-weight: 600;\n  text-transform: uppercase;\n  letter-spacing: 0.5px;\n}\n\n/* We posted their shoutout (green) */\n.rr-swap-badge-swapped {\n  background: rgba(40, 167, 69, 0.2);\n  color: #28a745;\n  border: 1px solid #28a745;\n}\n\n/* Both posted - swap complete (cyan) */\n.rr-swap-badge-returned {\n  background: rgba(23, 162, 184, 0.2);\n  color: #17a2b8;\n  border: 1px solid #17a2b8;\n}\n\n/* We posted, scanned, they didn't return (red) */\n.rr-swap-badge-not-found {\n  background: rgba(220, 53, 69, 0.2);\n  color: #dc3545;\n  border: 1px solid #dc3545;\n}\n\n/* They shouted us first (cyan) */\n.rr-swap-badge-shouted {\n  background: rgba(23, 162, 184, 0.2);\n  color: #17a2b8;\n  border: 1px solid #17a2b8;\n}\n\n/* Scheduled but not posted yet (orange) */\n.rr-swap-badge-scheduled {\n  background: rgba(230, 126, 34, 0.2);\n  color: #e67e22;\n  border: 1px solid #e67e22;\n}\n\n/* We posted but haven't scanned their chapters yet (grey) */\n.rr-swap-badge-not-scanned {\n  background: rgba(128, 128, 128, 0.2);\n  color: rgba(200, 200, 200, 0.9);\n  border: 1px solid rgba(128, 128, 128, 0.5);\n}\n\n.rr-swap-badge-clickable {\n  cursor: pointer;\n  transition: all 0.15s;\n}\n\n.rr-swap-badge-clickable:hover {\n  background: rgba(255, 193, 7, 0.4);\n  transform: scale(1.05);\n}\n\n.rr-swap-badge-checking {\n  background: rgba(23, 162, 184, 0.2);\n  color: #17a2b8;\n  border: 1px solid #17a2b8;\n}\n\n.rr-swap-badge-checking i {\n  margin-right: 0.25rem;\n}\n\n.rr-swap-checking {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 0.5rem;\n  width: 100%;\n  padding: 0 1rem;\n}\n\n.rr-swap-progress-bar {\n  width: 100%;\n  height: 6px;\n  background: rgba(128, 128, 128, 0.2);\n  border-radius: 3px;\n  overflow: hidden;\n}\n\n.rr-swap-progress-fill {\n  height: 100%;\n  background: #17a2b8;\n  border-radius: 3px;\n  transition: width 0.3s ease;\n}\n\n.rr-swap-progress-text {\n  font-size: 0.75rem;\n  color: rgba(128, 128, 128, 0.9);\n}\n\n.rr-swap-progress-chapter {\n  font-size: 0.7rem;\n  color: rgba(128, 128, 128, 0.6);\n  max-width: 100%;\n  text-align: center;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.rr-swap-last-scan {\n  font-size: 0.75rem;\n  color: rgba(128, 128, 128, 0.7);\n  margin-top: 0.5rem;\n}\n\n.rr-check-swap-btn {\n  margin-top: 0.5rem;\n}\n\n/* Swap Found Info */\n.rr-swap-found {\n  margin-top: 1rem;\n  padding: clamp(0.5rem, 2vw, 0.75rem);\n  background: rgba(40, 167, 69, 0.1);\n  border-radius: 6px;\n  border: 1px solid rgba(40, 167, 69, 0.3);\n  word-break: break-word;\n}\n\n.rr-swap-found-label {\n  font-size: clamp(0.75rem, 2vw, 0.85rem);\n  color: #28a745;\n}\n\n.rr-swap-found-label i {\n  margin-right: 0.25rem;\n}\n\n.rr-swap-view-link {\n  display: inline-flex;\n  align-items: center;\n  gap: 0.25rem;\n  margin-top: 0.5rem;\n  color: #337ab7;\n  text-decoration: none;\n  font-size: 0.85rem;\n}\n\n.rr-swap-view-link:hover {\n  text-decoration: underline;\n}\n\n/* Swap Result (error only now) */\n.rr-swap-result {\n  padding: 0.5rem 0.75rem;\n  border-radius: 4px;\n  font-size: 0.85rem;\n  margin-top: 0.5rem;\n}\n\n.rr-swap-result.rr-swap-not-found {\n  background: rgba(220, 53, 69, 0.1);\n  color: #dc3545;\n}\n\n.rr-swap-result i {\n  margin-right: 0.25rem;\n}\n\n/* Responsive */\n@media (max-width: 768px) {\n  .rr-modal.rr-modal-xlarge {\n    min-width: unset;\n    width: 95vw;\n  }\n  .rr-modal-edit-layout {\n    flex-direction: column;\n  }\n  .rr-modal-author-panel {\n    width: 100%;\n    max-width: 100%;\n  }\n  .rr-author-card-large {\n    flex-direction: row;\n    flex-wrap: wrap;\n    justify-content: center;\n    gap: 1rem;\n  }\n  .rr-author-cover-large {\n    width: 80px;\n    flex-shrink: 0;\n  }\n  .rr-scheduled-for-section {\n    width: 100%;\n  }\n  .rr-swap-section {\n    width: 100%;\n  }\n}\n\n@media (max-width: 600px) {\n  .rr-modal-preview-container {\n    max-height: 200px;\n  }\n  .rr-author-card-large {\n    flex-direction: column;\n  }\n}\n";
 
   // src/shout_out_swapper/ui/scanner/ScannerModal.css
   var ScannerModal_default = "/* Scanner Modal Styles */\n\n.rr-scanner-content {\n  display: flex;\n  flex-direction: column;\n  gap: 1rem;\n}\n\n.rr-scanner-fiction-select {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n}\n\n.rr-scanner-fiction-select select {\n  max-width: 400px;\n}\n\n.rr-scanner-description {\n  color: inherit;\n  opacity: 0.7;\n  font-size: 0.9rem;\n  margin: 0;\n}\n\n/* Progress */\n.rr-scanner-progress {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  padding: 1rem;\n  background: rgba(128, 128, 128, 0.1);\n  border-radius: 8px;\n}\n\n.rr-scanner-progress-bar {\n  height: 8px;\n  background: rgba(128, 128, 128, 0.2);\n  border-radius: 4px;\n  overflow: hidden;\n}\n\n.rr-scanner-progress-fill {\n  height: 100%;\n  background: #337ab7;\n  border-radius: 4px;\n  transition: width 0.3s ease;\n}\n\n.rr-scanner-progress-text {\n  font-size: 0.85rem;\n  opacity: 0.8;\n}\n\n.rr-scanner-found-count {\n  font-size: 0.85rem;\n  color: #28a745;\n  font-weight: 500;\n}\n\n/* Results */\n.rr-scanner-results {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  max-height: 200px;\n  overflow-y: auto;\n}\n\n.rr-scanner-results-header {\n  font-weight: 600;\n  font-size: 0.9rem;\n}\n\n.rr-scanner-results-list {\n  display: flex;\n  flex-direction: column;\n  gap: 0.25rem;\n}\n\n.rr-scanner-result-item {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  font-size: 0.85rem;\n  padding: 0.25rem 0;\n  border-bottom: 1px solid rgba(128, 128, 128, 0.1);\n}\n\n.rr-scanner-result-chapter {\n  font-weight: 500;\n  flex-shrink: 0;\n  max-width: 200px;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.rr-scanner-result-arrow {\n  opacity: 0.5;\n  flex-shrink: 0;\n}\n\n.rr-scanner-result-fiction {\n  color: #337ab7;\n  flex: 1;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.rr-scanner-result-author {\n  opacity: 0.6;\n  flex-shrink: 0;\n  font-size: 0.8rem;\n}\n\n/* Summary */\n.rr-scanner-summary {\n  padding: 1rem;\n  border-radius: 8px;\n  font-weight: 500;\n}\n\n.rr-scanner-summary-success {\n  background: rgba(40, 167, 69, 0.1);\n  color: #28a745;\n}\n\n.rr-scanner-summary-error {\n  background: rgba(220, 53, 69, 0.1);\n  color: #dc3545;\n}\n\n/* Checkbox */\n.rr-scanner-checkbox {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  cursor: pointer;\n  font-size: 0.9rem;\n}\n\n.rr-scanner-checkbox input {\n  cursor: pointer;\n}\n\n.rr-scanner-batch-label {\n  font-size: 0.8125rem;\n  font-weight: 500;\n  margin-bottom: 0.35rem;\n  opacity: 0.85;\n}\n\n.rr-scanner-phase {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  padding: 0.35rem 0.625rem;\n  margin-bottom: 0.75rem;\n  font-size: 0.75rem;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  border-radius: 999px;\n  background: rgba(0, 0, 0, 0.04);\n  width: fit-content;\n}\n.rr-scanner-phase-dot {\n  width: 7px;\n  height: 7px;\n  border-radius: 50%;\n  background: #999;\n  flex-shrink: 0;\n}\n.rr-scanner-phase--idle .rr-scanner-phase-dot { background: #9ca3af; }\n.rr-scanner-phase--scanning .rr-scanner-phase-dot {\n  background: #3b82f6;\n  animation: rr-scanner-pulse 1.2s ease-in-out infinite;\n}\n.rr-scanner-phase--swap-check .rr-scanner-phase-dot {\n  background: #a855f7;\n  animation: rr-scanner-pulse 1.2s ease-in-out infinite;\n}\n.rr-scanner-phase--complete .rr-scanner-phase-dot { background: #22c55e; }\n.rr-scanner-phase--error .rr-scanner-phase-dot { background: #ef4444; }\n@keyframes rr-scanner-pulse {\n  0%, 100% { opacity: 1; transform: scale(1); }\n  50% { opacity: 0.55; transform: scale(0.85); }\n}\n";

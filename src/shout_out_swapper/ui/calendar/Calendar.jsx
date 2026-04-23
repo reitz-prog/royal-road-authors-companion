@@ -143,19 +143,20 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
     });
   }, [shoutouts]);
 
-  // Get archived shoutouts (have at least one schedule with chapter set)
-  // Filter by filterFictionId (main fiction dropdown / URL scope) and search query
-  const archivedShoutouts = useMemo(() => {
+  // The List view shows every shoutout with at least one schedule matching
+  // filterFictionId — archived or not — grouped by shoutout, with per-
+  // schedule status lines rendered inside each card. It's a single source
+  // of truth across scheduled / pending / archived / swapped states.
+  const listShoutouts = useMemo(() => {
     const query = archiveSearch.toLowerCase().trim();
     return shoutouts
-      .filter(s => s.schedules?.some(sched => sched.chapter))
       .map(s => ({
         ...s,
-        archivedSchedules: s.schedules?.filter(sched =>
-          sched.chapter && (!filterFictionId || String(sched.fictionId) === String(filterFictionId))
-        ) || []
+        listSchedules: (s.schedules || []).filter(sched =>
+          !filterFictionId || String(sched.fictionId) === String(filterFictionId)
+        )
       }))
-      .filter(s => s.archivedSchedules.length > 0)
+      .filter(s => s.listSchedules.length > 0)
       .filter(s => {
         if (!query) return true;
         const title = (s.fictionTitle || '').toLowerCase();
@@ -1016,62 +1017,57 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
             </div>
 
             <div class="rr-archive-entries">
-              {archivedShoutouts.length === 0 ? (
-                <div class="rr-archive-empty">No archived shoutouts yet. Select a fiction and scan to find shoutouts in your chapters.</div>
+              {listShoutouts.length === 0 ? (
+                <div class="rr-archive-empty">No shoutouts yet. Add one on the calendar to get started.</div>
               ) : (
-                archivedShoutouts.map(s => {
-                  const wePosted = s.schedules?.some(sch => sch.chapter);
-                  const theyPosted = !!s.swappedDate;
-                  const hasScanned = !!s.lastSwapScanDate;
-
-                  // Get the schedule info for display
-                  const schedule = s.archivedSchedules?.[0] || s.schedules?.[0];
-                  const scheduleFiction = myFictions.find(f => String(f.fictionId) === String(schedule?.fictionId));
-
-                  // Status logic:
-                  // SWAPPED = Us AND Them
-                  // NOT FOUND = Us NOT Them AND scanned
-                  // NOT SCANNED = Us posted but not scanned (grey hourglass)
-                  // SHOUTED = Them NOT Us
-                  // SCHEDULED = neither
-                  // Check if swap is being checked
+                listShoutouts.map(s => {
                   const checkState = swapCheckStates[s.id];
                   const isChecking = checkState?.status === 'checking';
 
+                  const scheds = s.listSchedules;
+                  const archivedScheds = scheds.filter(x => x.chapter);
+                  const anyArchived = archivedScheds.length > 0;
+                  const allArchivedSwapped = anyArchived && archivedScheds.every(x => x.swappedDate);
+                  const anyArchivedSwapped = archivedScheds.some(x => x.swappedDate);
+                  const allArchivedScanned = anyArchived && archivedScheds.every(x => x.lastSwapScanDate);
+
+                  // Aggregate cover status:
+                  // - no archived → SCHEDULED (orange clock; we haven't posted yet)
+                  // - all archived + all swapped → SWAPPED (green retweet)
+                  // - some swapped, some not → PARTIAL (orange half-circle)
+                  // - all archived, all scanned, none swapped → NOT FOUND (red ✕)
+                  // - all archived, some not scanned → NOT SCANNED (grey hourglass)
                   let statusClass = 'rr-swap-status-scheduled';
                   let statusIcon = 'fa-clock';
-                  let statusTitle = 'Scheduled';
-
+                  let statusTitle = 'Scheduled — not posted yet';
                   if (isChecking) {
                     statusClass = 'rr-swap-status-checking';
                     statusIcon = 'fa-spinner fa-spin';
                     statusTitle = 'Checking for swap...';
-                  } else if (wePosted && theyPosted) {
+                  } else if (anyArchived && allArchivedSwapped) {
                     statusClass = 'rr-swap-status-swapped';
                     statusIcon = 'fa-retweet';
-                    statusTitle = 'Swapped!';
-                  } else if (wePosted && !theyPosted && hasScanned) {
+                    statusTitle = 'All archived schedules swapped';
+                  } else if (anyArchivedSwapped) {
+                    statusClass = 'rr-swap-status-scheduled';
+                    statusIcon = 'fa-adjust';
+                    statusTitle = 'Partial swap — some schedules not yet reciprocated';
+                  } else if (anyArchived && allArchivedScanned) {
                     statusClass = 'rr-swap-status-notfound';
                     statusIcon = 'fa-times';
-                    statusTitle = 'Not found - they haven\'t shouted you';
-                  } else if (wePosted && !theyPosted && !hasScanned) {
+                    statusTitle = 'Not found — they haven\'t shouted you';
+                  } else if (anyArchived) {
                     statusClass = 'rr-swap-status-notscanned';
                     statusIcon = 'fa-hourglass-half';
                     statusTitle = 'Not scanned yet';
-                  } else if (theyPosted) {
-                    statusClass = 'rr-swap-status-shouted';
-                    statusIcon = 'fa-comment';
-                    statusTitle = 'They shouted you!';
                   }
 
                   return (
                     <div
                       key={s.id}
-                      class={`rr-archive-entry ${wePosted ? 'rr-archive-entry-archived' : 'rr-archive-entry-pending'} ${isChecking ? 'rr-archive-entry-checking' : ''}`}
+                      class={`rr-archive-entry ${anyArchived ? 'rr-archive-entry-archived' : 'rr-archive-entry-pending'} ${isChecking ? 'rr-archive-entry-checking' : ''}`}
                       data-shoutout-id={s.id}
                       data-fiction-id={s.fictionId}
-                      data-schedule-fiction-id={schedule?.fictionId || ''}
-                      data-schedule-chapter={schedule?.chapter || ''}
                       onClick={() => onShoutoutClick?.(s, null, 'view')}
                     >
                       <div class="rr-archive-entry-covers">
@@ -1083,16 +1079,12 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
                               {(s.fictionTitle || '?')[0].toUpperCase()}
                             </div>
                           )}
-                          {/* Status icon overlay on cover */}
                           <span class={`rr-archive-status-overlay ${statusClass}`} title={statusTitle}>
                             <i class={`fa ${statusIcon}`}></i>
                           </span>
                         </div>
                       </div>
                       <div class="rr-archive-entry-info">
-                        <div class="rr-archive-entry-header">
-                          <span class="rr-archive-date">{schedule?.date || 'Unscheduled'}</span>
-                        </div>
                         <div class="rr-archive-shoutout-info">
                           <span class="rr-archive-shoutout-title">
                             <a
@@ -1109,23 +1101,64 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
                             by <span class="rr-archive-author-link" data-author={s.authorName}>{s.authorName || 'Unknown'}</span>
                           </span>
                         </div>
-                        {scheduleFiction && (
-                          <div class="rr-archive-swapped-for">
-                            <i class="fa fa-exchange-alt"></i> {scheduleFiction.title || `Fiction ${schedule.fictionId}`}
-                          </div>
-                        )}
-                      </div>
-                      <div class="rr-archive-entry-status">
-                        {/* Archived status - checkbox */}
-                        {wePosted ? (
-                          <span class="rr-list-status-icon rr-list-archived-icon rr-archived" title={`Archived: ${schedule?.chapter || 'Unknown chapter'}`}>
-                            <i class="fa fa-check-square"></i>
-                          </span>
-                        ) : (
-                          <span class="rr-list-status-icon rr-list-archived-icon" title="Scheduled shoutout">
-                            <i class="far fa-square"></i>
-                          </span>
-                        )}
+                        <div class="rr-archive-schedule-lines">
+                          {scheds.map((sched, idx) => {
+                            const fiction = myFictions.find(f => String(f.fictionId) === String(sched.fictionId));
+                            const fictionTitle = fiction?.title || `Fiction ${sched.fictionId}`;
+                            const wePosted = !!sched.chapter;
+                            const swapped = !!sched.swappedDate;
+                            const scanned = !!sched.lastSwapScanDate;
+
+                            // Classify for line style + trailing indicator
+                            let lineClass = 'rr-schedule-scheduled';
+                            let indicator = (
+                              <span class="rr-schedule-swap-state" title="Scheduled — not posted yet">
+                                <i class="fa fa-clock"></i> Scheduled
+                              </span>
+                            );
+                            if (swapped) {
+                              lineClass = 'rr-schedule-swapped';
+                              indicator = (
+                                <a
+                                  href={sched.swappedChapterUrl || '#'}
+                                  target="_blank"
+                                  rel="noopener"
+                                  class="rr-schedule-swap-link"
+                                  title={sched.swappedChapter || 'View swap chapter'}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <i class="fa fa-external-link"></i> {sched.swappedChapter || 'View chapter'}
+                                </a>
+                              );
+                            } else if (wePosted && scanned) {
+                              lineClass = 'rr-schedule-notfound';
+                              indicator = (
+                                <span class="rr-schedule-swap-state" title={`Scanned ${sched.lastSwapScanDate}, no link to ${fictionTitle} found`}>
+                                  <i class="fa fa-times"></i> Not found
+                                </span>
+                              );
+                            } else if (wePosted) {
+                              lineClass = 'rr-schedule-notscanned';
+                              indicator = (
+                                <span class="rr-schedule-swap-state" title="Posted, not scanned yet">
+                                  <i class="fa fa-hourglass-half"></i> Pending scan
+                                </span>
+                              );
+                            }
+                            return (
+                              <div
+                                key={`${sched.fictionId}-${sched.date || ''}-${sched.chapter || ''}-${idx}`}
+                                class={`rr-archive-schedule-line ${lineClass}`}
+                              >
+                                <span class="rr-schedule-our-fiction">
+                                  <i class="fa fa-exchange-alt"></i> {fictionTitle}
+                                </span>
+                                <span class="rr-schedule-our-date">{sched.date || 'Unscheduled'}</span>
+                                {indicator}
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                       <div class="rr-archive-actions">
                         <button

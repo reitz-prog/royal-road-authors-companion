@@ -51,6 +51,134 @@ async function ensureDB() {
   if (!dbReady) {
     await db.openDB();
     dbReady = true;
+    await runLegacySwapMigration();
+  }
+}
+
+// Today's date as YYYY-MM-DD
+function today() {
+  return new Date().toISOString().split('T')[0];
+}
+
+// Case-insensitive match for "/fiction/<id>" with a non-digit terminator, so
+// that fictionId "1" does not match "/fiction/12345".
+function fictionLinkRegex(fictionId) {
+  return new RegExp(`/fiction/${fictionId}(?=[/"'\\s?#]|$)`, 'i');
+}
+
+// Find the best target schedule for a per-schedule swap hit: the oldest
+// un-swapped schedule whose fictionId matches the fiction we detected in
+// their notes. Returns null when every schedule for that fiction is already
+// marked swapped (duplicate hit — safe to ignore).
+function findTargetSchedule(shoutout, myFictionId) {
+  return (shoutout.schedules || [])
+    .filter(s => String(s.fictionId) === String(myFictionId) && !s.swappedDate)
+    .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')))[0] || null;
+}
+
+// Mark a swap hit. Prefers writing to the matching unswapped schedule;
+// falls back to parent-level fields when no matching schedule exists (e.g.
+// legacy record with no schedules). Returns true when something was written.
+function assignSwap(shoutout, myFictionId, chapter, day) {
+  const sched = findTargetSchedule(shoutout, myFictionId);
+  if (sched) {
+    sched.swappedDate = day;
+    sched.swappedChapter = chapter.title;
+    sched.swappedChapterUrl = chapter.url;
+    sched.lastSwapScanDate = day;
+    return true;
+  }
+  if (!shoutout.swappedDate) {
+    shoutout.swappedDate = day;
+    shoutout.swappedChapter = chapter.title;
+    shoutout.swappedChapterUrl = chapter.url;
+    shoutout.lastSwapScanDate = day;
+    return true;
+  }
+  return false;
+}
+
+// Stamp lastSwapScanDate on every schedule whose fictionId is among the set
+// we actually searched for this shoutout.
+function stampScanDateOnSchedules(shoutout, myFictionIdSet, day) {
+  for (const sched of shoutout.schedules || []) {
+    if (myFictionIdSet.has(String(sched.fictionId))) {
+      sched.lastSwapScanDate = day;
+    }
+  }
+}
+
+// Keep the parent-level swap fields as a summary of the schedules for
+// backward-compat with read sites that still use them. Picks the earliest
+// swapped schedule as the representative.
+function syncShoutoutSwapSummary(shoutout) {
+  const schedules = shoutout.schedules || [];
+  // No schedules — parent fields are the only source of truth, leave as-is.
+  if (schedules.length === 0) return;
+  const swapped = schedules
+    .filter(s => s.swappedDate)
+    .sort((a, b) => String(a.swappedDate).localeCompare(String(b.swappedDate)))[0];
+  if (swapped) {
+    shoutout.swappedDate = swapped.swappedDate;
+    shoutout.swappedChapter = swapped.swappedChapter || null;
+    shoutout.swappedChapterUrl = swapped.swappedChapterUrl || null;
+  } else {
+    shoutout.swappedDate = null;
+    shoutout.swappedChapter = null;
+    shoutout.swappedChapterUrl = null;
+  }
+  const scanDates = schedules.map(s => s.lastSwapScanDate).filter(Boolean).sort();
+  if (scanDates.length) shoutout.lastSwapScanDate = scanDates[scanDates.length - 1];
+}
+
+// One-time migration for legacy records that have parent-level swap data
+// but no per-schedule data. Best-effort: assigns the swap to the oldest
+// archived schedule (or oldest schedule when none are archived).
+function migrateLegacyShoutout(shoutout) {
+  const schedules = shoutout.schedules || [];
+  if (schedules.length === 0) return false;
+  const anySwap = schedules.some(s => s.swappedDate);
+  const anyScan = schedules.some(s => s.lastSwapScanDate);
+  let mutated = false;
+  if (shoutout.swappedDate && !anySwap) {
+    const byDate = (a, b) => String(a.date || '').localeCompare(String(b.date || ''));
+    const archived = schedules.filter(s => s.chapter).sort(byDate);
+    const target = archived[0] || schedules.slice().sort(byDate)[0];
+    if (target) {
+      target.swappedDate = shoutout.swappedDate;
+      target.swappedChapter = shoutout.swappedChapter || null;
+      target.swappedChapterUrl = shoutout.swappedChapterUrl || null;
+      target.lastSwapScanDate =
+        target.lastSwapScanDate || shoutout.lastSwapScanDate || shoutout.swappedDate;
+      mutated = true;
+    }
+  }
+  if (shoutout.lastSwapScanDate && !anyScan) {
+    for (const sched of schedules) {
+      if (!sched.lastSwapScanDate) {
+        sched.lastSwapScanDate = shoutout.lastSwapScanDate;
+        mutated = true;
+      }
+    }
+  }
+  return mutated;
+}
+
+async function runLegacySwapMigration() {
+  try {
+    const all = await db.getAll('shoutouts') || [];
+    let migrated = 0;
+    for (const s of all) {
+      if (migrateLegacyShoutout(s)) {
+        await db.save('shoutouts', s);
+        migrated++;
+      }
+    }
+    if (migrated > 0) {
+      console.log('[RR Companion BG] Legacy swap migration: updated', migrated, 'shoutouts');
+    }
+  } catch (err) {
+    console.error('[RR Companion BG] Legacy swap migration failed:', err);
   }
 }
 
@@ -620,27 +748,40 @@ async function runFullScan(myFictionId) {
           const theirFictionData = await fetchChapterList(shoutout.fictionId);
           const theirChapters = theirFictionData.chapters || [];
 
-          // Check each chapter for our fiction links
+          // Scope the search to the fictions this shoutout was actually
+          // scheduled on — each hit gets attributed to its matching schedule.
+          // For legacy shoutouts with no schedules, fall back to all of our
+          // fictions so we still record a parent-level swap.
+          const shoutoutMyFictionIds = new Set(
+            (shoutout.schedules || []).map(s => String(s.fictionId)).filter(Boolean)
+          );
+          const relevantFictionIds = shoutoutMyFictionIds.size > 0
+            ? myFictionIds.filter(id => shoutoutMyFictionIds.has(String(id)))
+            : myFictionIds;
+          const day = today();
+
+          const allSchedulesSwapped = () => {
+            const schedules = shoutout.schedules || [];
+            if (schedules.length === 0) return !!shoutout.swappedDate;
+            return schedules
+              .filter(s => shoutoutMyFictionIds.has(String(s.fictionId)))
+              .every(s => s.swappedDate);
+          };
+
           for (const chapter of theirChapters) {
+            if (allSchedulesSwapped()) break;
             try {
               const notes = await fetchChapterNotes(chapter.url);
               const combined = notes?.combined || '';
 
-              // Check if any of our fiction IDs are in the notes
-              for (const myFictionId of myFictionIds) {
-                if (combined.includes(`/fiction/${myFictionId}`)) {
-                  // Found our shoutout - update the shoutout
-                  shoutout.swappedDate = new Date().toISOString().split('T')[0];
-                  shoutout.swappedChapter = chapter.title;
-                  shoutout.swappedChapterUrl = chapter.url;
-                  shoutout.lastSwapScanDate = new Date().toISOString().split('T')[0];
-                  await db.save('shoutouts', shoutout);
-                  swapsFound++;
-                  console.log('[RR Companion BG] Swap found:', shoutout.authorName, 'in', chapter.title);
-                  break;
+              for (const myFictionId of relevantFictionIds) {
+                if (fictionLinkRegex(myFictionId).test(combined)) {
+                  if (assignSwap(shoutout, myFictionId, chapter, day)) {
+                    swapsFound++;
+                    console.log('[RR Companion BG] Swap found:', shoutout.authorName, 'for fiction', myFictionId, 'in', chapter.title);
+                  }
                 }
               }
-              if (shoutout.swappedDate) break;
             } catch (chErr) {
               console.log('[RR Companion BG] Error checking chapter:', chapter.title);
             }
@@ -649,11 +790,10 @@ async function runFullScan(myFictionId) {
             await delay(200);
           }
 
-          // If not found, update lastSwapScanDate
-          if (!shoutout.swappedDate) {
-            shoutout.lastSwapScanDate = new Date().toISOString().split('T')[0];
-            await db.save('shoutouts', shoutout);
-          }
+          stampScanDateOnSchedules(shoutout, shoutoutMyFictionIds, day);
+          if (!(shoutout.schedules || []).length) shoutout.lastSwapScanDate = day;
+          syncShoutoutSwapSummary(shoutout);
+          await db.save('shoutouts', shoutout);
         } catch (err) {
           console.log('[RR Companion BG] Error checking swap for:', shoutout.authorName, err.message);
         }
@@ -846,10 +986,24 @@ async function checkAllSwaps(opts = {}) {
         }
 
         const theirChapters = parseResponse.data?.chapters || [];
-        let foundSwap = false;
+        const shoutoutMyFictionIds = new Set(
+          (shoutout.schedules || []).map(s => String(s.fictionId)).filter(Boolean)
+        );
+        const relevantFictionIds = shoutoutMyFictionIds.size > 0
+          ? myFictionIds.filter(id => shoutoutMyFictionIds.has(String(id)))
+          : myFictionIds;
+        const day = today();
 
-        // Check each chapter for our fiction links
+        const allSchedulesSwapped = () => {
+          const schedules = shoutout.schedules || [];
+          if (schedules.length === 0) return !!shoutout.swappedDate;
+          return schedules
+            .filter(s => shoutoutMyFictionIds.has(String(s.fictionId)))
+            .every(s => s.swappedDate);
+        };
+
         for (let i = 0; i < theirChapters.length; i++) {
+          if (allSchedulesSwapped()) break;
           const chapter = theirChapters[i];
 
           await updateShoutoutCheckState(shoutout.id, {
@@ -882,24 +1036,14 @@ async function checkAllSwaps(opts = {}) {
 
             const authorNotes = parseNotesResponse.data?.combined || '';
 
-            // Check for our fiction IDs
-            for (const myFictionId of myFictionIds) {
-              const pattern = new RegExp(`/fiction/${myFictionId}(/|"|'|\\s|$)`, 'i');
-              if (pattern.test(authorNotes)) {
-                // Found!
-                shoutout.swappedDate = new Date().toISOString().split('T')[0];
-                shoutout.swappedChapter = chapter.title;
-                shoutout.swappedChapterUrl = chapter.url;
-                shoutout.lastSwapScanDate = new Date().toISOString().split('T')[0];
-                await db.save('shoutouts', shoutout);
-                swapsFound++;
-                foundSwap = true;
-                console.log('[RR Companion BG] Swap found:', shoutout.authorName, 'in', chapter.title);
-                break;
+            for (const myFictionId of relevantFictionIds) {
+              if (fictionLinkRegex(myFictionId).test(authorNotes)) {
+                if (assignSwap(shoutout, myFictionId, chapter, day)) {
+                  swapsFound++;
+                  console.log('[RR Companion BG] Swap found:', shoutout.authorName, 'for fiction', myFictionId, 'in', chapter.title);
+                }
               }
             }
-
-            if (foundSwap) break;
           } catch (chErr) {
             console.log('[RR Companion BG] Error checking chapter:', chapter.title);
           }
@@ -907,11 +1051,12 @@ async function checkAllSwaps(opts = {}) {
           await delay(200);
         }
 
-        // Update lastSwapScanDate even if not found
-        if (!foundSwap) {
-          shoutout.lastSwapScanDate = new Date().toISOString().split('T')[0];
-          await db.save('shoutouts', shoutout);
-        }
+        stampScanDateOnSchedules(shoutout, shoutoutMyFictionIds, day);
+        if (!(shoutout.schedules || []).length) shoutout.lastSwapScanDate = day;
+        syncShoutoutSwapSummary(shoutout);
+        await db.save('shoutouts', shoutout);
+
+        const foundSwap = (shoutout.schedules || []).some(s => s.swappedDate) || !!shoutout.swappedDate;
 
         // Update check state
         await updateShoutoutCheckState(shoutout.id, {
@@ -1029,15 +1174,31 @@ async function checkSwapReturn(shoutoutId, theirFictionId, myFictionIds) {
       return { found: false, reason: 'No chapters found' };
     }
 
-    // Helper to scan a list of chapters
+    const shoutoutMyFictionIds = new Set(
+      (shoutout?.schedules || []).map(s => String(s.fictionId)).filter(Boolean)
+    );
+    const relevantFictionIds = shoutoutMyFictionIds.size > 0
+      ? myFictionIds.filter(id => shoutoutMyFictionIds.has(String(id)))
+      : myFictionIds;
+    const day = today();
+    let firstHit = null;
+
+    const allSchedulesSwapped = () => {
+      const schedules = shoutout?.schedules || [];
+      if (schedules.length === 0) return !!shoutout?.swappedDate;
+      return schedules
+        .filter(s => shoutoutMyFictionIds.has(String(s.fictionId)))
+        .every(s => s.swappedDate);
+    };
+
     const scanChapters = async (chapters, offset = 0) => {
       console.log('[RR Companion BG] Scanning', chapters.length, 'chapters starting at offset', offset);
 
       for (let i = 0; i < chapters.length; i++) {
+        if (allSchedulesSwapped()) return;
         const chapter = chapters[i];
         console.log(`[RR Companion BG] Scanning chapter ${offset + i + 1}/${allChapters.length}: ${chapter.title}`);
 
-        // Update persistent state
         await updateShoutoutCheckState(shoutoutId, {
           status: 'checking',
           current: offset + i + 1,
@@ -1045,7 +1206,6 @@ async function checkSwapReturn(shoutoutId, theirFictionId, myFictionIds) {
           chapter: chapter.title
         });
 
-        // Send progress update to all Royal Road tabs
         broadcastToTabs({
           type: 'swapCheckProgress',
           shoutoutId,
@@ -1054,7 +1214,6 @@ async function checkSwapReturn(shoutoutId, theirFictionId, myFictionIds) {
           chapter: chapter.title
         });
 
-        // Fetch chapter content
         const chapterResponse = await fetchWithRetry(chapter.url, { credentials: 'include' });
         if (!chapterResponse.ok) {
           console.log('[RR Companion BG] Failed to fetch chapter:', chapter.url, chapterResponse.status);
@@ -1062,7 +1221,6 @@ async function checkSwapReturn(shoutoutId, theirFictionId, myFictionIds) {
         }
         const chapterHtml = await chapterResponse.text();
 
-        // Parse author notes
         const parseNotesResponse = await chrome.runtime.sendMessage({
           type: 'parseChapterNotes',
           html: chapterHtml,
@@ -1075,91 +1233,72 @@ async function checkSwapReturn(shoutoutId, theirFictionId, myFictionIds) {
         }
 
         const authorNotes = parseNotesResponse.data?.combined || '';
-        console.log('[RR Companion BG] Author notes length:', authorNotes.length, 'has fiction link:', authorNotes.includes('/fiction/'));
 
-        // Check for our fiction IDs
-        for (const myFictionId of myFictionIds) {
-          const pattern = new RegExp(`/fiction/${myFictionId}(/|"|'|\\s|$)`, 'i');
-          if (pattern.test(authorNotes)) {
-            console.log('[RR Companion BG] FOUND our shoutout in:', chapter.title, 'for fiction:', myFictionId);
-            return { found: true, chapter };
+        for (const myFictionId of relevantFictionIds) {
+          if (fictionLinkRegex(myFictionId).test(authorNotes)) {
+            if (assignSwap(shoutout, myFictionId, chapter, day)) {
+              if (!firstHit) firstHit = chapter;
+              console.log('[RR Companion BG] FOUND our shoutout in:', chapter.title, 'for fiction:', myFictionId);
+            }
           }
         }
       }
-      console.log('[RR Companion BG] Finished scanning, not found');
-      return { found: false };
     };
 
-    let result;
-
     if (expectedReturnDate) {
-      // Smart scan: start from expectedDate - 3 days
       const startDate = new Date(expectedReturnDate);
       startDate.setDate(startDate.getDate() - 3);
       const startDateStr = startDate.toISOString().split('T')[0];
 
       console.log('[RR Companion BG] Smart scan starting from:', startDateStr);
 
-      // Find chapters from expectedDate-3 to end (chapters are sorted newest first)
-      // We want chapters where date >= startDateStr
       const priorityChapters = allChapters.filter(ch => ch.date && ch.date >= startDateStr);
       const olderChapters = allChapters.filter(ch => !ch.date || ch.date < startDateStr);
 
       console.log('[RR Companion BG] Priority chapters:', priorityChapters.length, 'Older:', olderChapters.length);
 
-      // First scan priority chapters
-      result = await scanChapters(priorityChapters, 0);
-
-      // If not found, scan older chapters
-      if (!result.found && olderChapters.length > 0) {
-        console.log('[RR Companion BG] Not found in priority, scanning older chapters...');
-        result = await scanChapters(olderChapters, priorityChapters.length);
+      await scanChapters(priorityChapters, 0);
+      if (!allSchedulesSwapped() && olderChapters.length > 0) {
+        console.log('[RR Companion BG] Not all done in priority, scanning older chapters...');
+        await scanChapters(olderChapters, priorityChapters.length);
       }
     } else {
-      // No expected date - scan everything
       console.log('[RR Companion BG] No expected date, scanning all chapters');
-      result = await scanChapters(allChapters, 0);
+      await scanChapters(allChapters, 0);
     }
 
-    // Update shoutout with result
-    const shoutoutToUpdate = await db.getById('shoutouts', shoutoutId);
-    if (shoutoutToUpdate) {
-      shoutoutToUpdate.lastSwapScanDate = new Date().toISOString().split('T')[0];
-      if (result.found) {
-        shoutoutToUpdate.swappedDate = new Date().toISOString().split('T')[0];
-        shoutoutToUpdate.swappedChapter = result.chapter.title;
-        shoutoutToUpdate.swappedChapterUrl = result.chapter.url;
-      }
-      await db.save('shoutouts', shoutoutToUpdate);
-    }
+    // Persist scan date + summary
+    stampScanDateOnSchedules(shoutout, shoutoutMyFictionIds, day);
+    if (!(shoutout.schedules || []).length) shoutout.lastSwapScanDate = day;
+    syncShoutoutSwapSummary(shoutout);
+    await db.save('shoutouts', shoutout);
 
-    // Broadcast completion to all tabs
+    const foundAny = (shoutout.schedules || []).some(s => s.swappedDate) || !!shoutout.swappedDate;
+
     broadcastToTabs({
       type: 'swapCheckComplete',
       shoutoutId,
-      found: result.found,
-      chapter: result.found ? result.chapter.title : null
+      found: foundAny,
+      chapter: firstHit?.title || null
     });
 
-    if (result.found) {
-      // Update persistent state - complete with found
+    if (foundAny) {
       await updateShoutoutCheckState(shoutoutId, {
         status: 'complete',
         found: true,
-        chapter: result.chapter.title,
-        chapterUrl: result.chapter.url,
+        chapter: firstHit?.title || shoutout.swappedChapter || null,
+        chapterUrl: firstHit?.url || shoutout.swappedChapterUrl || null,
         completedAt: new Date().toISOString()
       });
 
       return {
         found: true,
-        chapter: result.chapter.title,
-        chapterUrl: result.chapter.url,
-        date: result.chapter.date
+        chapter: firstHit?.title || shoutout.swappedChapter || null,
+        chapterUrl: firstHit?.url || shoutout.swappedChapterUrl || null,
+        date: firstHit?.date || null
       };
     }
 
-    // Update persistent state - complete but not found
     await updateShoutoutCheckState(shoutoutId, {
       status: 'complete',
       found: false,
