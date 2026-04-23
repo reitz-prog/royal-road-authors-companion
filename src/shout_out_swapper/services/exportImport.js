@@ -159,6 +159,53 @@ export async function exportToExcel() {
 }
 
 /**
+ * Download an empty Excel template with just Date and Code columns — the
+ * minimum needed to import. Each of the user's fictions gets its own sheet
+ * (sheet name = fiction title) so the importer can attribute rows. Other
+ * metadata (fiction title, author, etc.) is auto-filled from the shoutout
+ * code on import.
+ */
+export async function downloadEmptyTemplate() {
+  logger.info('Generating empty import template...');
+
+  const myFictions = await db.getAll('myFictions') || [];
+
+  const columns = ['Date', 'Code'];
+  const colWidths = [{ wch: 12 }, { wch: 80 }];
+
+  const workbook = XLSX.utils.book_new();
+
+  // One sheet per fiction (header row only). The sheet name is what the
+  // importer uses to attribute rows to a fiction. Falls back to a generic
+  // Template sheet when the user hasn't set up any fictions yet.
+  if (myFictions.length > 0) {
+    for (const f of myFictions) {
+      const sheetName = (f.title || `Fiction ${f.fictionId}`)
+        .substring(0, 31)
+        .replace(/[\\/*?:\[\]]/g, '');
+      const ws = XLSX.utils.json_to_sheet([], { header: columns });
+      ws['!cols'] = colWidths;
+      XLSX.utils.book_append_sheet(workbook, ws, sheetName);
+    }
+  } else {
+    const ws = XLSX.utils.json_to_sheet([], { header: columns });
+    ws['!cols'] = colWidths;
+    XLSX.utils.book_append_sheet(workbook, ws, 'Template');
+  }
+
+  // Unscheduled sheet for rows without a date (the importer treats a
+  // sheet named "Unscheduled" as, well, unscheduled).
+  const unscheduled = XLSX.utils.json_to_sheet([], { header: columns });
+  unscheduled['!cols'] = colWidths;
+  XLSX.utils.book_append_sheet(workbook, unscheduled, 'Unscheduled');
+
+  const filename = 'royal_road_shoutouts_template.xlsx';
+  XLSX.writeFile(workbook, filename);
+  logger.info('Template download complete', { filename });
+  return filename;
+}
+
+/**
  * Extract fiction ID from shoutout code
  */
 function extractFictionIdFromCode(code) {
@@ -168,21 +215,36 @@ function extractFictionIdFromCode(code) {
 }
 
 /**
- * Import shoutouts from Excel file - runs in background
- * Returns immediately after starting, use getImportState() to check progress
+ * Import shoutouts from a file — accepts .xlsx/.xls/.csv. Runs in
+ * background; returns immediately, progress via getImportState().
+ *
+ * CSV files produce a single sheet named "Sheet1"; the background importer
+ * treats any sheet name that doesn't match a known fiction as unscheduled.
+ * So to attribute a CSV to a specific fiction, the user should rename it
+ * to match the fiction title before using the Excel importer — or stick
+ * with the Excel template which already gets the sheet names right.
  */
 export async function importFromExcel(file) {
-  logger.info('Starting Excel import (background)...');
+  logger.info('Starting import (background)...', { name: file.name });
+
+  const isCsv = /\.csv$/i.test(file.name) || file.type === 'text/csv';
 
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
     reader.onload = async (e) => {
       try {
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
+        let workbook;
+        if (isCsv) {
+          const text = typeof e.target.result === 'string'
+            ? e.target.result
+            : new TextDecoder().decode(new Uint8Array(e.target.result));
+          workbook = XLSX.read(text, { type: 'string' });
+        } else {
+          const data = new Uint8Array(e.target.result);
+          workbook = XLSX.read(data, { type: 'array' });
+        }
 
-        // Convert workbook to simple data structure for background
         const workbookData = {
           sheets: workbook.SheetNames.map(sheetName => ({
             name: sheetName,
@@ -190,7 +252,6 @@ export async function importFromExcel(file) {
           }))
         };
 
-        // Send to background for processing
         chrome.runtime.sendMessage({
           type: 'startImport',
           workbookData
@@ -212,7 +273,11 @@ export async function importFromExcel(file) {
     };
 
     reader.onerror = () => reject(reader.error);
-    reader.readAsArrayBuffer(file);
+    if (isCsv) {
+      reader.readAsText(file);
+    } else {
+      reader.readAsArrayBuffer(file);
+    }
   });
 }
 

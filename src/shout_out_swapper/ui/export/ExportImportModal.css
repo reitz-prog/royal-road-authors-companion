@@ -21,6 +21,20 @@
   font-size: 0.85rem;
 }
 
+.rr-template-section {
+  margin-top: 0.25rem;
+}
+
+.rr-template-section h5 {
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.rr-template-section p {
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+}
+
 .rr-import-progress {
   margin-top: 1rem;
 }

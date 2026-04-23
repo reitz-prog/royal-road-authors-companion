@@ -2,7 +2,7 @@
 import { h } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
 import { Modal } from '../../../common/ui/modal/Modal.jsx';
-import { exportToExcel, importFromExcel, getImportState } from '../../services/exportImport.js';
+import { exportToExcel, importFromExcel, downloadEmptyTemplate, getImportState } from '../../services/exportImport.js';
 import { getSetting } from '../../../common/settings/core.js';
 import { log } from '../../../common/logging/core.js';
 
@@ -16,6 +16,7 @@ export function ExportImportModal({ isOpen, onClose, onComplete, currentFictionI
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const fileInputRef = useRef(null);
+  const csvInputRef = useRef(null);
   const pollIntervalRef = useRef(null);
 
   const writersGuildEnabled = getSetting('writersGuildEnabled');
@@ -88,8 +89,24 @@ export function ExportImportModal({ isOpen, onClose, onComplete, currentFictionI
     }
   };
 
+  const handleDownloadTemplate = async () => {
+    setError(null);
+    setResult(null);
+    try {
+      const filename = await downloadEmptyTemplate();
+      setResult({ type: 'template', message: `Template saved as ${filename}` });
+    } catch (err) {
+      logger.error('Template download failed', err);
+      setError(`Template download failed: ${err.message}`);
+    }
+  };
+
   const handleImportClick = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleCsvImportClick = () => {
+    csvInputRef.current?.click();
   };
 
   const handleFileSelect = async (e) => {
@@ -111,10 +128,9 @@ export function ExportImportModal({ isOpen, onClose, onComplete, currentFictionI
       setImporting(false);
       setProgress(null);
     } finally {
-      // Reset file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+      // Reset both file inputs so the same file can be reselected next time
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (csvInputRef.current) csvInputRef.current.value = '';
     }
   };
 
@@ -200,11 +216,14 @@ export function ExportImportModal({ isOpen, onClose, onComplete, currentFictionI
 
         <hr />
 
-        {/* Import Section */}
+        {/* Import from Excel */}
         <div class="rr-import-section">
           <h5>Import from Excel</h5>
           <p class="text-muted">
-            Import shoutouts from an Excel file. Sheet names must match your fiction titles.
+            Import shoutouts from an <code>.xlsx</code> / <code>.xls</code> workbook.
+            Sheet names should match your fiction titles — that's how rows are
+            attributed to a fiction. Only the <strong>Date</strong> and
+            <strong>Code</strong> columns are required.
           </p>
           <input
             ref={fileInputRef}
@@ -221,26 +240,57 @@ export function ExportImportModal({ isOpen, onClose, onComplete, currentFictionI
             {importing ? (
               <><i class="fa fa-spinner fa-spin"></i> Importing...</>
             ) : (
-              <><i class="fa fa-upload"></i> Import</>
+              <><i class="fa fa-file-excel-o"></i> Import Excel</>
             )}
           </button>
-
-          {/* Progress */}
-          {progress && (
-            <div class="rr-import-progress mt-3">
-              <div class="progress">
-                <div
-                  class="progress-bar"
-                  style={{ width: `${Math.round((progress.current / progress.total) * 100)}%` }}
-                />
-              </div>
-              <small class="text-muted">
-                {progress.current} / {progress.total} rows processed
-                ({progress.imported} imported, {progress.duplicates} duplicates, {progress.skipped} skipped)
-              </small>
-            </div>
-          )}
         </div>
+
+        <hr />
+
+        {/* Import from CSV */}
+        <div class="rr-import-section">
+          <h5>Import from CSV</h5>
+          <p class="text-muted">
+            Import shoutouts from a single <code>.csv</code> file. Required columns:
+            <strong> Date</strong> and <strong>Code</strong>. CSVs are a single sheet,
+            so rows land as <em>Unscheduled</em> unless you rename the sheet to match
+            a fiction title — use the Excel template for automatic attribution.
+          </p>
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv"
+            style={{ display: 'none' }}
+            onChange={handleFileSelect}
+          />
+          <button
+            class="btn btn-secondary"
+            onClick={handleCsvImportClick}
+            disabled={exporting || importing}
+          >
+            {importing ? (
+              <><i class="fa fa-spinner fa-spin"></i> Importing...</>
+            ) : (
+              <><i class="fa fa-file-text-o"></i> Import CSV</>
+            )}
+          </button>
+        </div>
+
+        {/* Shared progress bar for whichever importer is running */}
+        {progress && (
+          <div class="rr-import-progress mt-3">
+            <div class="progress">
+              <div
+                class="progress-bar"
+                style={{ width: `${Math.round((progress.current / progress.total) * 100)}%` }}
+              />
+            </div>
+            <small class="text-muted">
+              {progress.current} / {progress.total} rows processed
+              ({progress.imported} imported, {progress.duplicates} duplicates, {progress.skipped} skipped)
+            </small>
+          </div>
+        )}
 
         {/* Writers Guild Section */}
         {writersGuildEnabled && (
@@ -266,6 +316,24 @@ export function ExportImportModal({ isOpen, onClose, onComplete, currentFictionI
             </div>
           </>
         )}
+
+        <hr />
+
+        {/* Empty template - sits at the bottom as a helper for newcomers */}
+        <div class="rr-template-section">
+          <h5>Empty template</h5>
+          <p class="text-muted">
+            Download a blank <code>.xlsx</code> with one sheet per fiction and just
+            the two columns you need (Date and Code). Fill it in, then import above.
+          </p>
+          <button
+            class="btn btn-primary"
+            onClick={handleDownloadTemplate}
+            disabled={exporting || importing}
+          >
+            <i class="fa fa-file-excel-o"></i> Download empty template
+          </button>
+        </div>
 
         {/* Result */}
         {result && (
