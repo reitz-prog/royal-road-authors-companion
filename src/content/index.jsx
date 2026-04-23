@@ -97,8 +97,8 @@ function waitForElement(finder, timeout = 10000) {
 // Check route type
 function getRouteType() {
   const path = window.location.pathname;
-  // Analytics pages
-  if (path.includes('/author-dashboard/analytics/followers/')) return 'analytics-followers';
+  // Analytics pages — matches both /followers/123 and /followers?id=123
+  if (path.match(/\/author-dashboard\/analytics\/followers(\/|$)/)) return 'analytics-followers';
   // Chapter edit pages - show banner only (under /author-dashboard/chapters/)
   if (path.includes('/author-dashboard/chapters/new/') ||
       path.includes('/author-dashboard/chapters/edit/') ||

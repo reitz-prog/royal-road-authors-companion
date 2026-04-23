@@ -36020,9 +36020,8 @@
       const query = archiveSearch.toLowerCase().trim();
       return shoutouts.filter((s4) => s4.schedules?.some((sched) => sched.chapter)).map((s4) => ({
         ...s4,
-        // Only include archived schedules, filtered by fiction if selected
         archivedSchedules: s4.schedules?.filter(
-          (sched) => sched.chapter && (!scanFictionId || String(sched.fictionId) === String(scanFictionId))
+          (sched) => sched.chapter && (!filterFictionId || String(sched.fictionId) === String(filterFictionId))
         ) || []
       })).filter((s4) => s4.archivedSchedules.length > 0).filter((s4) => {
         if (!query)
@@ -36031,7 +36030,7 @@
         const author = (s4.authorName || "").toLowerCase();
         return title.includes(query) || author.includes(query);
       });
-    }, [shoutouts, scanFictionId, archiveSearch]);
+    }, [shoutouts, filterFictionId, archiveSearch]);
     const handleDragOver = (e4, dateStr) => {
       e4.preventDefault();
       e4.dataTransfer.dropEffect = "move";
@@ -40142,7 +40141,10 @@
   var FAVORITES_STORE = "favoritesData";
   function getFictionIdFromUrl() {
     const match = window.location.pathname.match(/\/followers\/(\d+)/);
-    return match ? match[1] : null;
+    if (match)
+      return match[1];
+    const qs = new URLSearchParams(window.location.search).get("id");
+    return qs && /^\d+$/.test(qs) ? qs : null;
   }
   async function fetchData(fictionId, type) {
     const endpoint = type === "followers" ? "followers" : "favorites";
@@ -42146,7 +42148,7 @@
   }
   function getRouteType() {
     const path = window.location.pathname;
-    if (path.includes("/author-dashboard/analytics/followers/"))
+    if (path.match(/\/author-dashboard\/analytics\/followers(\/|$)/))
       return "analytics-followers";
     if (path.includes("/author-dashboard/chapters/new/") || path.includes("/author-dashboard/chapters/edit/") || path.includes("/author-dashboard/chapters/editdraft/")) {
       return "chapter-edit";

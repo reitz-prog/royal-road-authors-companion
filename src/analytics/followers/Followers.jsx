@@ -13,7 +13,9 @@ const FAVORITES_STORE = 'favoritesData';
 
 function getFictionIdFromUrl() {
   const match = window.location.pathname.match(/\/followers\/(\d+)/);
-  return match ? match[1] : null;
+  if (match) return match[1];
+  const qs = new URLSearchParams(window.location.search).get('id');
+  return qs && /^\d+$/.test(qs) ? qs : null;
 }
 
 async function fetchData(fictionId, type) {

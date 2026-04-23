@@ -784,8 +784,13 @@ async function checkAllSwaps(opts = {}) {
     const unswappedShoutouts = allShoutouts.filter((s) => {
       if (s.swappedDate || !s.fictionId)
         return false;
-      if (fictionId && String(s.fictionId) !== String(fictionId))
-        return false;
+      if (fictionId) {
+        const onOurFiction = (s.schedules || []).some(
+          (sch) => String(sch.fictionId) === String(fictionId)
+        );
+        if (!onOurFiction)
+          return false;
+      }
       return true;
     });
     if (unswappedShoutouts.length === 0) {

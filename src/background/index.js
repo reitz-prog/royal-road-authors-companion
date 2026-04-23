@@ -708,13 +708,21 @@ async function checkAllSwaps(opts = {}) {
 
     // Check every shoutout that isn't already confirmed swapped.
     // Includes scheduled/unposted ones — they might have posted us first.
-    // When `fictionId` is set, scope to shoutouts belonging to that fiction
-    // only — useful right after scanning one fiction so we don't re-check
-    // every previous fiction's shoutouts.
+    //
+    // `fictionId` scopes the check to shoutouts that appear on one of our
+    // fictions. A shoutout's `s.fictionId` is the OTHER author's fiction
+    // (the one we're shouting), while `s.schedules[*].fictionId` points to
+    // OUR fiction where the shoutout is scheduled or archived. Matching
+    // that schedule field is the correct scoping.
     const allShoutouts = await db.getAll('shoutouts') || [];
     const unswappedShoutouts = allShoutouts.filter(s => {
       if (s.swappedDate || !s.fictionId) return false;
-      if (fictionId && String(s.fictionId) !== String(fictionId)) return false;
+      if (fictionId) {
+        const onOurFiction = (s.schedules || []).some(
+          sch => String(sch.fictionId) === String(fictionId),
+        );
+        if (!onOurFiction) return false;
+      }
       return true;
     });
 

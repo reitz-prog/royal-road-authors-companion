@@ -144,27 +144,25 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
   }, [shoutouts]);
 
   // Get archived shoutouts (have at least one schedule with chapter set)
-  // Filter by scanFictionId if selected, and by search query
+  // Filter by filterFictionId (main fiction dropdown / URL scope) and search query
   const archivedShoutouts = useMemo(() => {
     const query = archiveSearch.toLowerCase().trim();
     return shoutouts
       .filter(s => s.schedules?.some(sched => sched.chapter))
       .map(s => ({
         ...s,
-        // Only include archived schedules, filtered by fiction if selected
         archivedSchedules: s.schedules?.filter(sched =>
-          sched.chapter && (!scanFictionId || String(sched.fictionId) === String(scanFictionId))
+          sched.chapter && (!filterFictionId || String(sched.fictionId) === String(filterFictionId))
         ) || []
       }))
-      .filter(s => s.archivedSchedules.length > 0) // Only include if has matching archived schedules
+      .filter(s => s.archivedSchedules.length > 0)
       .filter(s => {
         if (!query) return true;
-        // Search by fiction title and author name
         const title = (s.fictionTitle || '').toLowerCase();
         const author = (s.authorName || '').toLowerCase();
         return title.includes(query) || author.includes(query);
       });
-  }, [shoutouts, scanFictionId, archiveSearch]);
+  }, [shoutouts, filterFictionId, archiveSearch]);
 
   // Drag and drop handlers
   const handleDragOver = (e, dateStr) => {
