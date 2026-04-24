@@ -64,7 +64,7 @@ export async function fetchPage(url) {
   try {
     logger.debug('Fetching page', { url });
     const response = await fetchWithRetry(url, {
-      credentials: 'include',
+      credentials: 'omit',
       headers: { 'Accept': 'text/html' }
     });
 
@@ -93,7 +93,7 @@ export async function fetchFictionDetails(fictionId) {
 
   try {
     const response = await fetchWithRetry(url, {
-      credentials: 'include',
+      credentials: 'omit',
       headers: { 'Accept': 'text/html' }
     });
 

@@ -734,7 +734,7 @@ async function parseInContext(type, payload) {
 async function fetchChapterList(fictionId) {
   const url = `https://www.royalroad.com/fiction/${fictionId}`;
   console.log("[RR Companion BG] Fetching fiction page:", url);
-  const response = await fetchWithRetry(url, { credentials: "include" });
+  const response = await fetchWithRetry(url, { credentials: "omit" });
   if (!response.ok) {
     throw new Error(`Failed to fetch fiction page: ${response.status}`);
   }
@@ -747,7 +747,7 @@ async function fetchChapterList(fictionId) {
   return result.data;
 }
 async function fetchChapterNotes(chapterUrl) {
-  const response = await fetchWithRetry(chapterUrl, { credentials: "include" });
+  const response = await fetchWithRetry(chapterUrl, { credentials: "omit" });
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
   }
@@ -768,7 +768,7 @@ async function extractShoutoutsFromHtml(html, excludeFictionId) {
 async function fetchFictionDetails(fictionId) {
   const url = `https://www.royalroad.com/fiction/${fictionId}`;
   authorLogger.info("Fetching fiction details", { fictionId, url });
-  const response = await fetchWithRetry(url, { credentials: "include" });
+  const response = await fetchWithRetry(url, { credentials: "omit" });
   if (!response.ok) {
     authorLogger.error("Failed to fetch fiction page", { fictionId, status: response.status });
     throw new Error(`Failed to fetch fiction page: ${response.status}`);
@@ -1219,7 +1219,7 @@ async function checkAllSwaps(opts = {}) {
       });
       try {
         const chapterListUrl = `https://www.royalroad.com/fiction/${shoutout.fictionId}`;
-        const chapterListResponse = await fetchWithRetry(chapterListUrl, { credentials: "include" });
+        const chapterListResponse = await fetchWithRetry(chapterListUrl, { credentials: "omit" });
         if (!chapterListResponse.ok) {
           console.log("[RR Companion BG] Failed to fetch fiction:", shoutout.fictionId);
           await updateShoutoutCheckState(shoutout.id, { status: "complete", found: false });
@@ -1265,7 +1265,7 @@ async function checkAllSwaps(opts = {}) {
             chapter: chapter.title
           });
           try {
-            const chapterResponse = await fetchWithRetry(chapter.url, { credentials: "include" });
+            const chapterResponse = await fetchWithRetry(chapter.url, { credentials: "omit" });
             if (!chapterResponse.ok)
               continue;
             const chapterHtml = await chapterResponse.text();
@@ -1358,7 +1358,7 @@ async function checkSwapReturn(shoutoutId, theirFictionId, myFictionIds) {
     console.log("[RR Companion BG] Expected return date:", expectedReturnDate);
     const chapterListUrl = `https://www.royalroad.com/fiction/${theirFictionId}`;
     console.log("[RR Companion BG] Fetching fiction page:", chapterListUrl);
-    const chapterListResponse = await fetchWithRetry(chapterListUrl, { credentials: "include" });
+    const chapterListResponse = await fetchWithRetry(chapterListUrl, { credentials: "omit" });
     if (!chapterListResponse.ok) {
       console.error("[RR Companion BG] Failed to fetch fiction page:", chapterListResponse.status);
       throw new Error(`Failed to fetch fiction page: ${chapterListResponse.status}`);
@@ -1414,7 +1414,7 @@ async function checkSwapReturn(shoutoutId, theirFictionId, myFictionIds) {
           total: allChapters.length,
           chapter: chapter.title
         });
-        const chapterResponse = await fetchWithRetry(chapter.url, { credentials: "include" });
+        const chapterResponse = await fetchWithRetry(chapter.url, { credentials: "omit" });
         if (!chapterResponse.ok) {
           console.log("[RR Companion BG] Failed to fetch chapter:", chapter.url, chapterResponse.status);
           continue;

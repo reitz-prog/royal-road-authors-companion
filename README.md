@@ -25,9 +25,9 @@ A browser extension that gives Royal Road authors a calendar-based shoutout swap
 
 ### Firefox
 
-1. Grab `authors-companion-firefox-v<version>.zip` from [Releases](../../releases).
-2. **Temporary install (any Firefox)** — open `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on...** → select the zip. Persists until the browser closes.
-3. **Permanent install (Firefox Developer Edition or Nightly)** — open `about:config`, set `xpinstall.signatures.required` to `false`. Rename the zip to `.xpi`, drag onto Firefox, confirm the install.
+1. Grab `authors-companion-firefox-v<version>.xpi` from [Releases](../../releases) (a `.zip` of the same bytes is also published if you need it).
+2. **Temporary install (any Firefox)** — open `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on...** → select the `.xpi` or `.zip`. Persists until the browser closes.
+3. **Permanent install (Firefox Developer Edition or Nightly)** — open `about:config`, set `xpinstall.signatures.required` to `false`. Drag the `.xpi` onto Firefox and confirm the install.
 
 ## Building from source
 

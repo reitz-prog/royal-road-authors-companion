@@ -35314,7 +35314,7 @@
     logger4.info("Fetching fiction details", { fictionId });
     try {
       const response = await fetchWithRetry(url, {
-        credentials: "include",
+        credentials: "omit",
         headers: { "Accept": "text/html" }
       });
       if (!response.ok) {
@@ -37844,6 +37844,7 @@
     const textareaRef = A2(null);
     const previewRef = A2(null);
     const lastShoutoutIdRef = A2(null);
+    const justPastedRef = A2(false);
     y2(() => {
       if (!isOpen)
         return;
@@ -37895,9 +37896,6 @@
         });
       } else {
         setAuthorInfo(null);
-      }
-      if (textareaRef.current) {
-        textareaRef.current.value = newCode;
       }
     }, [isOpen, shoutout, date, currentFictionId, myFictions]);
     y2(() => {
@@ -37972,17 +37970,23 @@
         setLoading(false);
         return;
       }
+      let cancelled = false;
       const basicInfo = parseShoutoutCode(code);
       if (basicInfo.fictionId) {
         setLoading(true);
         setAuthorInfo(basicInfo);
         const fetchDetails = async () => {
           const data = await parseShoutoutCodeAsync(code);
+          if (cancelled)
+            return;
           setAuthorInfo(data);
           setLoading(false);
         };
-        const timeout = setTimeout(fetchDetails, 100);
+        const delay2 = justPastedRef.current ? 0 : 100;
+        justPastedRef.current = false;
+        const timeout = setTimeout(fetchDetails, delay2);
         return () => {
+          cancelled = true;
           clearTimeout(timeout);
           setLoading(false);
         };
@@ -37990,7 +37994,15 @@
         setAuthorInfo(basicInfo.fictionTitle ? basicInfo : null);
         setLoading(false);
       }
-    }, [code, shoutout]);
+    }, [code]);
+    const effectiveAuthorInfo = mode === "view" && shoutout ? {
+      fictionId: shoutout.fictionId,
+      fictionTitle: shoutout.fictionTitle,
+      fictionUrl: shoutout.fictionUrl,
+      coverUrl: shoutout.coverUrl,
+      authorName: shoutout.authorName,
+      profileUrl: shoutout.profileUrl
+    } : authorInfo;
     const handleSave = q2(() => {
       const actualCode = textareaRef.current?.value || code;
       onSave?.({
@@ -38160,7 +38172,7 @@
                 /* @__PURE__ */ u4("div", { class: "rr-modal-author-panel", children: /* @__PURE__ */ u4(
                   AuthorInfo,
                   {
-                    info: authorInfo,
+                    info: effectiveAuthorInfo,
                     loading,
                     shoutout,
                     schedules: shoutout?.schedules || [],
@@ -38230,7 +38242,10 @@
                         ref: textareaRef,
                         class: "rr-modal-textarea form-control",
                         placeholder: "Paste your shoutout code here...",
-                        defaultValue: code,
+                        value: code,
+                        onPaste: () => {
+                          justPastedRef.current = true;
+                        },
                         onInput: (e4) => setCode(e4.target.value)
                       }
                     )
@@ -38322,7 +38337,7 @@
                 /* @__PURE__ */ u4("div", { class: "rr-modal-author-panel", children: /* @__PURE__ */ u4(
                   AuthorInfo,
                   {
-                    info: authorInfo,
+                    info: effectiveAuthorInfo,
                     loading,
                     shoutout,
                     schedules,

@@ -75,6 +75,10 @@ export function ShoutoutModal({
   const textareaRef = useRef(null);
   const previewRef = useRef(null);
   const lastShoutoutIdRef = useRef(null);
+  // Paste events skip the parse-debounce so the preview swaps in right
+  // away. Typing keeps the debounce so we don't hammer fetchFictionDetails
+  // on every keystroke.
+  const justPastedRef = useRef(false);
 
   // Reset state when modal opens or shoutout ID changes (not on data refresh)
   useEffect(() => {
@@ -146,10 +150,7 @@ export function ShoutoutModal({
       setAuthorInfo(null);
     }
 
-    // Update textarea directly since we use defaultValue
-    if (textareaRef.current) {
-      textareaRef.current.value = newCode;
-    }
+    // Textarea is now controlled via `value={code}`; no manual sync needed.
   }, [isOpen, shoutout, date, currentFictionId, myFictions]);
 
   // Check for ongoing swap check when modal opens (for scans started from calendar)
@@ -229,6 +230,19 @@ export function ShoutoutModal({
   // longer matches the stored code), fall through and re-parse. Otherwise
   // the preview panel gets stuck showing the old fiction even after the
   // code has been replaced with a different shoutout's code.
+  //
+  // A `cancelled` flag also guards against a stale parseShoutoutCodeAsync
+  // resolving after the user has already switched to a different shoutout
+  // — without it, the preview would briefly flash the previous card's
+  // data.
+  //
+  // NOTE: deps are `[code]` only. When the user switches shoutouts the
+  // reset effect above fires first and setCode(newShoutout.code); the
+  // parse effect then re-runs on the resulting code change and sees
+  // codeUnchanged=true, so it doesn't clobber the freshly-set authorInfo.
+  // Including `shoutout` in the deps would cause a stale-code re-parse
+  // during the shoutout-change tick (code still holds the previous
+  // shoutout's value at that moment) and overwrite the cached authorInfo.
   useEffect(() => {
     const hasCache = shoutout?.fictionTitle || shoutout?.authorName;
     const codeUnchanged = (shoutout?.code || '').trim() === code.trim();
@@ -242,31 +256,50 @@ export function ShoutoutModal({
       return;
     }
 
-    // Immediately parse to get basic info (sync)
+    let cancelled = false;
+
     const basicInfo = parseShoutoutCode(code);
 
-    // If we have a fictionId, set loading immediately and fetch full details
     if (basicInfo.fictionId) {
       setLoading(true);
-      setAuthorInfo(basicInfo); // Show basic info while loading
+      setAuthorInfo(basicInfo);
 
       const fetchDetails = async () => {
         const data = await parseShoutoutCodeAsync(code);
+        if (cancelled) return;
         setAuthorInfo(data);
         setLoading(false);
       };
 
-      const timeout = setTimeout(fetchDetails, 100);
+      // Paste → no debounce. Keystrokes → 100ms debounce so rapid typing
+      // doesn't fire a fetch per character.
+      const delay = justPastedRef.current ? 0 : 100;
+      justPastedRef.current = false;
+      const timeout = setTimeout(fetchDetails, delay);
       return () => {
+        cancelled = true;
         clearTimeout(timeout);
         setLoading(false);
       };
     } else {
-      // No fictionId found
       setAuthorInfo(basicInfo.fictionTitle ? basicInfo : null);
       setLoading(false);
     }
-  }, [code, shoutout]);
+  }, [code]);
+
+  // In view mode the preview should mirror whatever's stored on the
+  // current shoutout record — no async parsing, no stale authorInfo.
+  // Quickly switching between cards won't flash the previous card's data.
+  const effectiveAuthorInfo = mode === 'view' && shoutout
+    ? {
+        fictionId: shoutout.fictionId,
+        fictionTitle: shoutout.fictionTitle,
+        fictionUrl: shoutout.fictionUrl,
+        coverUrl: shoutout.coverUrl,
+        authorName: shoutout.authorName,
+        profileUrl: shoutout.profileUrl,
+      }
+    : authorInfo;
 
   const handleSave = useCallback(() => {
     // Read directly from textarea ref like we do for preview
@@ -489,7 +522,7 @@ export function ShoutoutModal({
               {/* Right side - author panel with swap status */}
               <div class="rr-modal-author-panel">
                 <AuthorInfo
-                  info={authorInfo}
+                  info={effectiveAuthorInfo}
                   loading={loading}
                   shoutout={shoutout}
                   schedules={shoutout?.schedules || []}
@@ -558,7 +591,8 @@ export function ShoutoutModal({
                   ref={textareaRef}
                   class="rr-modal-textarea form-control"
                   placeholder="Paste your shoutout code here..."
-                  defaultValue={code}
+                  value={code}
+                  onPaste={() => { justPastedRef.current = true; }}
                   onInput={(e) => setCode(e.target.value)}
                 />
               </div>
@@ -666,7 +700,7 @@ export function ShoutoutModal({
 
           <div class="rr-modal-author-panel">
             <AuthorInfo
-              info={authorInfo}
+              info={effectiveAuthorInfo}
               loading={loading}
               shoutout={shoutout}
               schedules={schedules}

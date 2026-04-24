@@ -65,10 +65,18 @@ m.browser_specific_settings = {
 fs.writeFileSync('$OUT/manifest.json', JSON.stringify(m, null, 2) + '\n');
 EOF
 
-ZIP_NAME="authors-companion-firefox-v$VERSION.zip"
-echo "Creating $ZIP_NAME..."
-rm -f "$ZIP_NAME"
-( cd "$OUT" && zip -r "../../$ZIP_NAME" . >/dev/null )
+XPI_PATH="dist/authors-companion-firefox-v$VERSION.xpi"
+ZIP_PATH="dist/authors-companion-firefox-v$VERSION.zip"
+
+echo "Creating $XPI_PATH..."
+rm -f "$XPI_PATH"
+( cd "$OUT" && zip -r "../../$XPI_PATH" . >/dev/null )
+
+# .xpi and .zip have identical bytes; ship both so users can pick whichever
+# extension their install path prefers.
+echo "Creating $ZIP_PATH..."
+rm -f "$ZIP_PATH"
+cp "$XPI_PATH" "$ZIP_PATH"
 
 echo
 echo "Firefox build ready."
@@ -76,4 +84,4 @@ echo "  Temporary install (any Firefox):"
 echo "    about:debugging#/runtime/this-firefox → Load Temporary Add-on..."
 echo "    → pick $OUT/manifest.json"
 echo "  Permanent install (Dev Edition / Nightly with signatures off, or AMO):"
-echo "    use $ZIP_NAME"
+echo "    use $XPI_PATH (or $ZIP_PATH if the install path wants .zip)"

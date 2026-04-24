@@ -27,10 +27,11 @@ zip -r "$CHROME_ZIP" \
     dist/*.js dist/*.js.map
 
 # Produce the Firefox package via build-firefox.sh (skipping its rebuild
-# since we just ran one). Writes dist/firefox/ and the Firefox zip.
-FIREFOX_ZIP="authors-companion-firefox-v$VERSION.zip"
-echo "Creating $FIREFOX_ZIP..."
-rm -f "$FIREFOX_ZIP"
+# since we just ran one). Writes dist/firefox/ and both .xpi + .zip.
+FIREFOX_XPI="dist/authors-companion-firefox-v$VERSION.xpi"
+FIREFOX_ZIP="dist/authors-companion-firefox-v$VERSION.zip"
+echo "Creating $FIREFOX_XPI + $FIREFOX_ZIP..."
+rm -f "$FIREFOX_XPI" "$FIREFOX_ZIP"
 SKIP_BUILD=1 ./build-firefox.sh >/dev/null
 
 # Build release notes: caller may pass a notes file as $1.
@@ -46,9 +47,9 @@ INSTALL_BLOCK="## Installation
 5. Click **Load unpacked** and select the unzipped folder
 
 ### Firefox
-1. Download **$FIREFOX_ZIP**
-2. **Temporary (any Firefox)**: go to \`about:debugging#/runtime/this-firefox\`, click **Load Temporary Add-on...**, select the zip
-3. **Permanent (Dev Edition / Nightly)**: set \`xpinstall.signatures.required\` to \`false\` in \`about:config\`, rename the zip to \`.xpi\`, drag onto Firefox"
+1. Download **$(basename "$FIREFOX_XPI")** (or **$(basename "$FIREFOX_ZIP")** — same bytes, different extension)
+2. **Temporary (any Firefox)**: go to \`about:debugging#/runtime/this-firefox\`, click **Load Temporary Add-on...**, select either file
+3. **Permanent (Dev Edition / Nightly)**: set \`xpinstall.signatures.required\` to \`false\` in \`about:config\`, drag the .xpi onto Firefox"
 
 if [ -n "$NOTES_FILE" ]; then
     if [ ! -f "$NOTES_FILE" ]; then
@@ -62,14 +63,14 @@ else
     NOTES_BODY="$INSTALL_BLOCK"
 fi
 
-# Create the release with both Chrome + Firefox assets.
+# Create the release with Chrome zip + Firefox xpi + Firefox zip assets.
 echo "Creating release v$VERSION..."
 gh release create "v$VERSION" \
     --title "v$VERSION" \
     --notes "$NOTES_BODY" \
-    "$CHROME_ZIP" "$FIREFOX_ZIP"
+    "$CHROME_ZIP" "$FIREFOX_XPI" "$FIREFOX_ZIP"
 
 # Cleanup
-rm -f "$CHROME_ZIP" "$FIREFOX_ZIP"
+rm -f "$CHROME_ZIP" "$FIREFOX_XPI" "$FIREFOX_ZIP"
 
 echo "Release v$VERSION created successfully!"
