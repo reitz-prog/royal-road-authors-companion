@@ -1016,3 +1016,60 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+
+/* Schedule pill is a clickable button — opens the StatusEditModal. */
+.rr-swap-pill-button {
+  font: inherit;
+  cursor: pointer;
+}
+
+/* StatusEditModal — opens on top of the shoutout modal so the user has a
+   roomy panel to pick the new status and (for SWAPPED) paste a chapter URL. */
+.rr-modal-status-edit {
+  width: 480px;
+  max-width: calc(100vw - 2rem);
+}
+
+.rr-status-edit-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.rr-status-edit-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+}
+
+.rr-status-edit-meta-label {
+  color: rgba(128, 128, 128, 0.85);
+}
+
+.rr-status-edit-meta-date {
+  color: rgba(128, 128, 128, 0.7);
+  font-size: 0.8rem;
+}
+
+.rr-status-edit-url-label {
+  margin-top: 0.4rem;
+}
+
+.rr-status-edit-url-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.rr-status-edit-url-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.rr-status-edit-hint {
+  margin: 0.2rem 0 0;
+  font-size: 0.75rem;
+  color: rgba(128, 128, 128, 0.85);
+}

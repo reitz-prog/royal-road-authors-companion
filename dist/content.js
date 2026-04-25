@@ -37135,9 +37135,10 @@
             const scheds = s4.listSchedules;
             const archivedScheds = scheds.filter((x3) => x3.chapter);
             const anyArchived = archivedScheds.length > 0;
-            const allArchivedSwapped = anyArchived && archivedScheds.every((x3) => x3.swappedDate);
-            const anyArchivedSwapped = archivedScheds.some((x3) => x3.swappedDate);
             const allArchivedScanned = anyArchived && archivedScheds.every((x3) => x3.lastSwapScanDate);
+            const swappedScheds = scheds.filter((x3) => x3.swappedDate);
+            const anySwapped = swappedScheds.length > 0;
+            const allSwapped = anySwapped && scheds.every((x3) => x3.swappedDate);
             const todayStrCard = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
             const anyPendingExpected = scheds.some(
               (x3) => x3.expectedSwapDate && !x3.swappedDate && todayStrCard < x3.expectedSwapDate
@@ -37149,11 +37150,11 @@
               statusClass = "rr-swap-status-checking";
               statusIcon = "fa-spinner fa-spin";
               statusTitle = "Checking for swap...";
-            } else if (anyArchived && allArchivedSwapped) {
+            } else if (allSwapped) {
               statusClass = "rr-swap-status-swapped";
               statusIcon = "fa-retweet";
-              statusTitle = "All archived schedules swapped";
-            } else if (anyArchivedSwapped) {
+              statusTitle = "All schedules swapped";
+            } else if (anySwapped) {
               statusClass = "rr-swap-status-scheduled";
               statusIcon = "fa-adjust";
               statusTitle = "Partial swap \u2014 some schedules not yet reciprocated";
@@ -38474,7 +38475,50 @@
       return "NOT SCANNED";
     return "SCHEDULED";
   }
-  function SchedulePill({ state, sched }) {
+  var MANUAL_STATUS_OPTIONS = ["SCHEDULED", "SHOUTED", "NOT FOUND", "SWAPPED"];
+  function chapterTitleFromUrl(url) {
+    if (!url)
+      return "";
+    const m4 = String(url).match(/\/chapter\/\d+\/([^/?#]+)/);
+    if (!m4)
+      return "";
+    return decodeURIComponent(m4[1].replace(/-/g, " "));
+  }
+  function fieldUpdatesForStatus(status, chapterUrl) {
+    const todayStr = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const url = (chapterUrl || "").trim();
+    switch (status) {
+      case "SWAPPED":
+        return {
+          swappedDate: todayStr,
+          swappedChapter: chapterTitleFromUrl(url),
+          swappedChapterUrl: url
+        };
+      case "SHOUTED":
+        return {
+          swappedDate: todayStr,
+          swappedChapter: "",
+          swappedChapterUrl: ""
+        };
+      case "NOT FOUND":
+        return {
+          swappedDate: "",
+          swappedChapter: "",
+          swappedChapterUrl: "",
+          lastSwapScanDate: todayStr
+        };
+      case "SCHEDULED":
+      default:
+        return {
+          swappedDate: "",
+          swappedChapter: "",
+          swappedChapterUrl: "",
+          lastSwapScanDate: ""
+        };
+    }
+  }
+  function SchedulePill({ state, sched, onSetStatus }) {
+    const [editorOpen, setEditorOpen] = d3(false);
     const classByState = {
       SWAPPED: "rr-swap-badge-swapped",
       "NOT FOUND": "rr-swap-badge-not-found",
@@ -38484,7 +38528,6 @@
       PENDING: "rr-swap-badge-pending"
     };
     const cls = classByState[state] || "rr-swap-badge-scheduled";
-    const clickable = state === "SWAPPED" && !!sched.swappedChapterUrl;
     const titleParts = [state];
     if (state === "SWAPPED" && sched.swappedChapter)
       titleParts.push(`in "${sched.swappedChapter}"`);
@@ -38493,21 +38536,126 @@
     if (state === "PENDING" && sched.expectedSwapDate)
       titleParts.push(`expected by ${sched.expectedSwapDate}`);
     const title = titleParts.join(" \u2014 ");
-    if (clickable) {
-      return /* @__PURE__ */ u4(
-        "a",
+    if (!onSetStatus) {
+      return /* @__PURE__ */ u4("span", { class: `rr-swap-pill ${cls}`, title, children: state });
+    }
+    return /* @__PURE__ */ u4(S, { children: [
+      /* @__PURE__ */ u4(
+        "button",
         {
-          class: `rr-swap-pill ${cls} rr-swap-badge-clickable`,
-          href: sched.swappedChapterUrl,
-          target: "_blank",
-          rel: "noopener",
-          title,
-          onClick: (e4) => e4.stopPropagation(),
+          type: "button",
+          class: `rr-swap-pill ${cls} rr-swap-badge-clickable rr-swap-pill-button`,
+          title: `${title} \u2014 click to change status`,
+          onClick: (e4) => {
+            e4.stopPropagation();
+            setEditorOpen(true);
+          },
           children: state
         }
-      );
-    }
-    return /* @__PURE__ */ u4("span", { class: `rr-swap-pill ${cls}`, title, children: state });
+      ),
+      /* @__PURE__ */ u4(
+        StatusEditModal,
+        {
+          isOpen: editorOpen,
+          onClose: () => setEditorOpen(false),
+          currentState: state,
+          sched,
+          onSetStatus: (target, url) => {
+            onSetStatus(target, url);
+            setEditorOpen(false);
+          }
+        }
+      )
+    ] });
+  }
+  function StatusEditModal({ isOpen, onClose, currentState, sched, onSetStatus }) {
+    const initialTarget = MANUAL_STATUS_OPTIONS.includes(currentState) ? currentState : "SWAPPED";
+    const [target, setTarget] = d3(initialTarget);
+    const [chapterUrl, setChapterUrl] = d3(sched.swappedChapterUrl || "");
+    y2(() => {
+      if (!isOpen)
+        return;
+      setTarget(initialTarget);
+      setChapterUrl(sched.swappedChapterUrl || "");
+    }, [isOpen, initialTarget, sched.swappedChapterUrl]);
+    const handleSave = () => {
+      onSetStatus(target, (chapterUrl || "").trim());
+    };
+    const openChapter = () => {
+      const url = (chapterUrl || "").trim();
+      if (url)
+        window.open(url, "_blank", "noopener");
+    };
+    const footer = /* @__PURE__ */ u4(S, { children: [
+      /* @__PURE__ */ u4("button", { class: "btn btn-secondary", onClick: onClose, children: "Cancel" }),
+      /* @__PURE__ */ u4("button", { class: "btn btn-primary", onClick: handleSave, children: "Save" })
+    ] });
+    return /* @__PURE__ */ u4(
+      Modal,
+      {
+        isOpen,
+        onClose,
+        title: "Set schedule status",
+        footer,
+        className: "rr-modal-status-edit",
+        children: /* @__PURE__ */ u4("div", { class: "rr-status-edit-body", children: [
+          /* @__PURE__ */ u4("div", { class: "rr-status-edit-meta", children: [
+            /* @__PURE__ */ u4("span", { class: "rr-status-edit-meta-label", children: "Currently:" }),
+            /* @__PURE__ */ u4("span", { class: `rr-swap-pill ${{
+              SWAPPED: "rr-swap-badge-swapped",
+              "NOT FOUND": "rr-swap-badge-not-found",
+              "NOT SCANNED": "rr-swap-badge-not-scanned",
+              SHOUTED: "rr-swap-badge-shouted",
+              SCHEDULED: "rr-swap-badge-scheduled",
+              PENDING: "rr-swap-badge-pending"
+            }[currentState] || "rr-swap-badge-scheduled"}`, children: currentState }),
+            sched.date && /* @__PURE__ */ u4("span", { class: "rr-status-edit-meta-date", children: sched.date })
+          ] }),
+          /* @__PURE__ */ u4("label", { class: "rr-modal-label", children: "New status" }),
+          /* @__PURE__ */ u4(
+            ThemedSelect,
+            {
+              value: target,
+              onChange: (e4) => setTarget(e4.target.value),
+              children: MANUAL_STATUS_OPTIONS.map((opt) => /* @__PURE__ */ u4("option", { value: opt, children: opt }, opt))
+            }
+          ),
+          target === "SWAPPED" && /* @__PURE__ */ u4(S, { children: [
+            /* @__PURE__ */ u4("label", { class: "rr-modal-label rr-status-edit-url-label", children: "Chapter URL (optional)" }),
+            /* @__PURE__ */ u4("div", { class: "rr-status-edit-url-row", children: [
+              /* @__PURE__ */ u4(
+                "input",
+                {
+                  type: "url",
+                  class: "form-control form-control-sm rr-status-edit-url-input",
+                  placeholder: "https://www.royalroad.com/fiction/.../chapter/...",
+                  value: chapterUrl,
+                  onInput: (e4) => setChapterUrl(e4.target.value),
+                  onKeyDown: (e4) => {
+                    if (e4.key === "Enter") {
+                      e4.preventDefault();
+                      handleSave();
+                    }
+                  },
+                  autoFocus: true
+                }
+              ),
+              chapterUrl && /* @__PURE__ */ u4(
+                "button",
+                {
+                  type: "button",
+                  class: "btn btn-sm btn-outline-secondary",
+                  onClick: openChapter,
+                  title: "Open chapter in new tab",
+                  children: /* @__PURE__ */ u4("i", { class: "fa fa-external-link" })
+                }
+              )
+            ] }),
+            /* @__PURE__ */ u4("p", { class: "rr-status-edit-hint", children: "If you provide the chapter URL we'll capture the chapter title from it." })
+          ] })
+        ] })
+      }
+    );
   }
   function ExpectedDatePill({ value, onSave }) {
     const [editing, setEditing] = d3(!value);
@@ -38732,7 +38880,16 @@
             /* @__PURE__ */ u4("span", { class: "rr-scheduled-fiction-title", children: fictionTitle }),
             sched.date && /* @__PURE__ */ u4("span", { class: "rr-scheduled-date", children: sched.date }),
             !sched.date && /* @__PURE__ */ u4("span", { class: "rr-scheduled-date rr-unscheduled", children: "Unscheduled" }),
-            shoutout && /* @__PURE__ */ u4(SchedulePill, { state, sched }),
+            shoutout && /* @__PURE__ */ u4(
+              SchedulePill,
+              {
+                state,
+                sched,
+                onSetStatus: (target, chapterUrl) => {
+                  onSaveScheduleField?.(idx, fieldUpdatesForStatus(target, chapterUrl));
+                }
+              }
+            ),
             shoutout && !(sched.swappedDate && !sched.expectedSwapDate) && /* @__PURE__ */ u4(
               ExpectedDatePill,
               {
@@ -40114,7 +40271,17 @@
         if (!newSchedules[idx])
           return;
         newSchedules[idx] = { ...newSchedules[idx], ...fields };
-        const updated = { ...shoutout, schedules: newSchedules };
+        const parentUpdates = {};
+        const swappedScheds = newSchedules.filter((s4) => s4.swappedDate);
+        if (swappedScheds.length) {
+          const primary = [...swappedScheds].sort(
+            (a4, b3) => (b3.swappedDate || "").localeCompare(a4.swappedDate || "")
+          )[0];
+          parentUpdates.swappedDate = primary.swappedDate;
+          parentUpdates.swappedChapter = primary.swappedChapter || "";
+          parentUpdates.swappedChapterUrl = primary.swappedChapterUrl || "";
+        }
+        const updated = { ...shoutout, ...parentUpdates, schedules: newSchedules };
         await save("shoutouts", updated);
         setShoutouts((prev) => prev.map((s4) => s4.id === shoutoutId ? updated : s4));
         setModalShoutout((prev) => prev?.id === shoutoutId ? updated : prev);
@@ -44910,6 +45077,63 @@
   border-radius: 8px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+/* Schedule pill is a clickable button \u2014 opens the StatusEditModal. */
+.rr-swap-pill-button {
+  font: inherit;
+  cursor: pointer;
+}
+
+/* StatusEditModal \u2014 opens on top of the shoutout modal so the user has a
+   roomy panel to pick the new status and (for SWAPPED) paste a chapter URL. */
+.rr-modal-status-edit {
+  width: 480px;
+  max-width: calc(100vw - 2rem);
+}
+
+.rr-status-edit-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.rr-status-edit-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+}
+
+.rr-status-edit-meta-label {
+  color: rgba(128, 128, 128, 0.85);
+}
+
+.rr-status-edit-meta-date {
+  color: rgba(128, 128, 128, 0.7);
+  font-size: 0.8rem;
+}
+
+.rr-status-edit-url-label {
+  margin-top: 0.4rem;
+}
+
+.rr-status-edit-url-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.rr-status-edit-url-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.rr-status-edit-hint {
+  margin: 0.2rem 0 0;
+  font-size: 0.75rem;
+  color: rgba(128, 128, 128, 0.85);
 }
 `;
 

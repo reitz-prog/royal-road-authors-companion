@@ -1267,21 +1267,22 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
                   const scheds = s.listSchedules;
                   const archivedScheds = scheds.filter(x => x.chapter);
                   const anyArchived = archivedScheds.length > 0;
-                  const allArchivedSwapped = anyArchived && archivedScheds.every(x => x.swappedDate);
-                  const anyArchivedSwapped = archivedScheds.some(x => x.swappedDate);
                   const allArchivedScanned = anyArchived && archivedScheds.every(x => x.lastSwapScanDate);
+                  // Count swap state across ALL schedules (not only "archived"
+                  // ones), so a manually-marked SWAPPED on a not-yet-posted
+                  // schedule still flips the cover status correctly.
+                  const swappedScheds = scheds.filter(x => x.swappedDate);
+                  const anySwapped = swappedScheds.length > 0;
+                  const allSwapped = anySwapped && scheds.every(x => x.swappedDate);
                   const todayStrCard = new Date().toISOString().slice(0, 10);
                   const anyPendingExpected = scheds.some(
                     x => x.expectedSwapDate && !x.swappedDate && todayStrCard < x.expectedSwapDate,
                   );
 
-                  // Aggregate cover status:
-                  // - no archived → SCHEDULED (orange clock; we haven't posted yet)
-                  // - all archived + all swapped → SWAPPED (green retweet)
-                  // - some swapped, some not → PARTIAL (orange half-circle)
-                  // - PENDING (purple hourglass-start) — expected swap date set + not reached yet
-                  // - all archived, all scanned, none swapped → NOT FOUND (red ✕)
-                  // - all archived, some not scanned → NOT SCANNED (grey hourglass)
+                  // Aggregate cover status (priority order):
+                  //   CHECKING → SWAPPED (all) → PARTIAL (some) → PENDING →
+                  //   NOT FOUND (all archived + scanned) → NOT SCANNED (some archived)
+                  //   → SCHEDULED (default).
                   let statusClass = 'rr-swap-status-scheduled';
                   let statusIcon = 'fa-clock';
                   let statusTitle = 'Scheduled — not posted yet';
@@ -1289,11 +1290,11 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
                     statusClass = 'rr-swap-status-checking';
                     statusIcon = 'fa-spinner fa-spin';
                     statusTitle = 'Checking for swap...';
-                  } else if (anyArchived && allArchivedSwapped) {
+                  } else if (allSwapped) {
                     statusClass = 'rr-swap-status-swapped';
                     statusIcon = 'fa-retweet';
-                    statusTitle = 'All archived schedules swapped';
-                  } else if (anyArchivedSwapped) {
+                    statusTitle = 'All schedules swapped';
+                  } else if (anySwapped) {
                     statusClass = 'rr-swap-status-scheduled';
                     statusIcon = 'fa-adjust';
                     statusTitle = 'Partial swap — some schedules not yet reciprocated';

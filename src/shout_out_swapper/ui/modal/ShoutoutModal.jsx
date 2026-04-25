@@ -2,6 +2,7 @@ import { h } from 'preact';
 import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
 import { Modal } from '../../../common/ui/modal/Modal.jsx';
 import { DangerConfirmDialog } from '../../../common/ui/dialog/Dialog.jsx';
+import { ThemedSelect } from '../../../common/ui/components/index.jsx';
 import { parseShoutoutCode, parseShoutoutCodeAsync } from '../../services/parser.js';
 import { checkSwapReturn, getShoutoutCheckState } from '../../services/scanner.js';
 import { log } from '../../../common/logging/core.js';
@@ -811,7 +812,57 @@ function getSchedulePillState(sched) {
   return 'SCHEDULED';
 }
 
-function SchedulePill({ state, sched }) {
+// User-settable target statuses. PENDING and NOT SCANNED are derived from
+// other fields (expectedSwapDate / chapter+!scan), so they're not in the
+// dropdown. Each target maps to a concrete set of schedule field updates.
+const MANUAL_STATUS_OPTIONS = ['SCHEDULED', 'SHOUTED', 'NOT FOUND', 'SWAPPED'];
+
+function chapterTitleFromUrl(url) {
+  if (!url) return '';
+  const m = String(url).match(/\/chapter\/\d+\/([^/?#]+)/);
+  if (!m) return '';
+  return decodeURIComponent(m[1].replace(/-/g, ' '));
+}
+
+function fieldUpdatesForStatus(status, chapterUrl) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const url = (chapterUrl || '').trim();
+  switch (status) {
+    case 'SWAPPED':
+      return {
+        swappedDate: todayStr,
+        swappedChapter: chapterTitleFromUrl(url),
+        swappedChapterUrl: url,
+      };
+    case 'SHOUTED':
+      // They posted but our chapter isn't archived yet.
+      return {
+        swappedDate: todayStr,
+        swappedChapter: '',
+        swappedChapterUrl: '',
+      };
+    case 'NOT FOUND':
+      // We posted, "scanned" today, no swap detected.
+      return {
+        swappedDate: '',
+        swappedChapter: '',
+        swappedChapterUrl: '',
+        lastSwapScanDate: todayStr,
+      };
+    case 'SCHEDULED':
+    default:
+      // Reset everything back to clean scheduled state.
+      return {
+        swappedDate: '',
+        swappedChapter: '',
+        swappedChapterUrl: '',
+        lastSwapScanDate: '',
+      };
+  }
+}
+
+function SchedulePill({ state, sched, onSetStatus }) {
+  const [editorOpen, setEditorOpen] = useState(false);
   const classByState = {
     SWAPPED: 'rr-swap-badge-swapped',
     'NOT FOUND': 'rr-swap-badge-not-found',
@@ -821,28 +872,139 @@ function SchedulePill({ state, sched }) {
     PENDING: 'rr-swap-badge-pending',
   };
   const cls = classByState[state] || 'rr-swap-badge-scheduled';
-  const clickable = state === 'SWAPPED' && !!sched.swappedChapterUrl;
   const titleParts = [state];
   if (state === 'SWAPPED' && sched.swappedChapter) titleParts.push(`in "${sched.swappedChapter}"`);
   if (state === 'NOT FOUND' && sched.lastSwapScanDate) titleParts.push(`scanned ${sched.lastSwapScanDate}`);
   if (state === 'PENDING' && sched.expectedSwapDate) titleParts.push(`expected by ${sched.expectedSwapDate}`);
   const title = titleParts.join(' — ');
 
-  if (clickable) {
-    return (
-      <a
-        class={`rr-swap-pill ${cls} rr-swap-badge-clickable`}
-        href={sched.swappedChapterUrl}
-        target="_blank"
-        rel="noopener"
-        title={title}
-        onClick={(e) => e.stopPropagation()}
+  if (!onSetStatus) {
+    return <span class={`rr-swap-pill ${cls}`} title={title}>{state}</span>;
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        class={`rr-swap-pill ${cls} rr-swap-badge-clickable rr-swap-pill-button`}
+        title={`${title} — click to change status`}
+        onClick={(e) => { e.stopPropagation(); setEditorOpen(true); }}
       >
         {state}
-      </a>
-    );
-  }
-  return <span class={`rr-swap-pill ${cls}`} title={title}>{state}</span>;
+      </button>
+      <StatusEditModal
+        isOpen={editorOpen}
+        onClose={() => setEditorOpen(false)}
+        currentState={state}
+        sched={sched}
+        onSetStatus={(target, url) => {
+          onSetStatus(target, url);
+          setEditorOpen(false);
+        }}
+      />
+    </>
+  );
+}
+
+// Status editor — opens as a small modal on top of the shoutout modal.
+// More room than an inline pill expansion, and the dropdown panel doesn't
+// fight with the cramped author panel column.
+function StatusEditModal({ isOpen, onClose, currentState, sched, onSetStatus }) {
+  const initialTarget = MANUAL_STATUS_OPTIONS.includes(currentState) ? currentState : 'SWAPPED';
+  const [target, setTarget] = useState(initialTarget);
+  const [chapterUrl, setChapterUrl] = useState(sched.swappedChapterUrl || '');
+
+  // Re-sync local state every time the modal opens.
+  useEffect(() => {
+    if (!isOpen) return;
+    setTarget(initialTarget);
+    setChapterUrl(sched.swappedChapterUrl || '');
+  }, [isOpen, initialTarget, sched.swappedChapterUrl]);
+
+  const handleSave = () => {
+    onSetStatus(target, (chapterUrl || '').trim());
+  };
+
+  const openChapter = () => {
+    const url = (chapterUrl || '').trim();
+    if (url) window.open(url, '_blank', 'noopener');
+  };
+
+  const footer = (
+    <>
+      <button class="btn btn-secondary" onClick={onClose}>Cancel</button>
+      <button class="btn btn-primary" onClick={handleSave}>Save</button>
+    </>
+  );
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Set schedule status"
+      footer={footer}
+      className="rr-modal-status-edit"
+    >
+      <div class="rr-status-edit-body">
+        <div class="rr-status-edit-meta">
+          <span class="rr-status-edit-meta-label">Currently:</span>
+          <span class={`rr-swap-pill ${{
+            SWAPPED: 'rr-swap-badge-swapped',
+            'NOT FOUND': 'rr-swap-badge-not-found',
+            'NOT SCANNED': 'rr-swap-badge-not-scanned',
+            SHOUTED: 'rr-swap-badge-shouted',
+            SCHEDULED: 'rr-swap-badge-scheduled',
+            PENDING: 'rr-swap-badge-pending',
+          }[currentState] || 'rr-swap-badge-scheduled'}`}>
+            {currentState}
+          </span>
+          {sched.date && <span class="rr-status-edit-meta-date">{sched.date}</span>}
+        </div>
+
+        <label class="rr-modal-label">New status</label>
+        <ThemedSelect
+          value={target}
+          onChange={(e) => setTarget(e.target.value)}
+        >
+          {MANUAL_STATUS_OPTIONS.map(opt => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </ThemedSelect>
+
+        {target === 'SWAPPED' && (
+          <>
+            <label class="rr-modal-label rr-status-edit-url-label">Chapter URL (optional)</label>
+            <div class="rr-status-edit-url-row">
+              <input
+                type="url"
+                class="form-control form-control-sm rr-status-edit-url-input"
+                placeholder="https://www.royalroad.com/fiction/.../chapter/..."
+                value={chapterUrl}
+                onInput={(e) => setChapterUrl(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); handleSave(); }
+                }}
+                autoFocus
+              />
+              {chapterUrl && (
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary"
+                  onClick={openChapter}
+                  title="Open chapter in new tab"
+                >
+                  <i class="fa fa-external-link"></i>
+                </button>
+              )}
+            </div>
+            <p class="rr-status-edit-hint">
+              If you provide the chapter URL we'll capture the chapter title from it.
+            </p>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
 }
 
 // Per-schedule "expected swap date" pill. Read-only display + edit pencil
@@ -1099,7 +1261,15 @@ function AuthorInfo({ info, loading, shoutout, schedules = [], myFictions = [], 
                   <span class="rr-scheduled-fiction-title">{fictionTitle}</span>
                   {sched.date && <span class="rr-scheduled-date">{sched.date}</span>}
                   {!sched.date && <span class="rr-scheduled-date rr-unscheduled">Unscheduled</span>}
-                  {shoutout && <SchedulePill state={state} sched={sched} />}
+                  {shoutout && (
+                    <SchedulePill
+                      state={state}
+                      sched={sched}
+                      onSetStatus={(target, chapterUrl) => {
+                        onSaveScheduleField?.(idx, fieldUpdatesForStatus(target, chapterUrl));
+                      }}
+                    />
+                  )}
                   {shoutout && !(sched.swappedDate && !sched.expectedSwapDate) && (
                     <ExpectedDatePill
                       value={sched.expectedSwapDate || ''}

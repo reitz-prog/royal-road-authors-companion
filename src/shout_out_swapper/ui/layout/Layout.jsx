@@ -351,10 +351,25 @@ export function Layout({ routeType = 'main-dashboard' }) {
       const newSchedules = [...(shoutout.schedules || [])];
       if (!newSchedules[idx]) return;
       newSchedules[idx] = { ...newSchedules[idx], ...fields };
-      const updated = { ...shoutout, schedules: newSchedules };
+
+      // Keep parent-level swap summary fields in sync when any schedule
+      // gets marked swapped (manual or otherwise) — the calendar tile uses
+      // the parent's swappedDate / swappedChapter to decide SWAPPED, so
+      // without this the tile stays at NOT FOUND after a manual mark.
+      const parentUpdates = {};
+      const swappedScheds = newSchedules.filter(s => s.swappedDate);
+      if (swappedScheds.length) {
+        // Pick the latest swap (sort by date descending) as the "primary".
+        const primary = [...swappedScheds].sort((a, b) =>
+          (b.swappedDate || '').localeCompare(a.swappedDate || '')
+        )[0];
+        parentUpdates.swappedDate = primary.swappedDate;
+        parentUpdates.swappedChapter = primary.swappedChapter || '';
+        parentUpdates.swappedChapterUrl = primary.swappedChapterUrl || '';
+      }
+
+      const updated = { ...shoutout, ...parentUpdates, schedules: newSchedules };
       await db.save('shoutouts', updated);
-      // Patch local shoutouts array; also update the active modal's shoutout
-      // so the new value reflects without a full reload.
       setShoutouts(prev => prev.map(s => (s.id === shoutoutId ? updated : s)));
       setModalShoutout(prev => (prev?.id === shoutoutId ? updated : prev));
       logger.info('Saved schedule field', { shoutoutId, idx, fields });
