@@ -1627,11 +1627,95 @@ async function runImport(workbookData) {
       type: "importStarted",
       total: totalRows
     });
+    const orderedSheets = [...workbookData.sheets].sort((a, b) => {
+      const ac = (a.name || "").toLowerCase() === "contacts";
+      const bc = (b.name || "").toLowerCase() === "contacts";
+      if (ac !== bc)
+        return ac ? -1 : 1;
+      return 0;
+    });
     let cancelled = false;
-    for (const sheet of workbookData.sheets) {
+    for (const sheet of orderedSheets) {
       if (cancelled)
         break;
-      const isUnscheduled = sheet.name.toLowerCase() === "unscheduled";
+      const sheetNameLower = (sheet.name || "").toLowerCase();
+      const isUnscheduled = sheetNameLower === "unscheduled";
+      const isMyCodes = sheetNameLower === "my codes" || sheetNameLower === "mycodes";
+      const isContacts = sheetNameLower === "contacts";
+      if (isMyCodes) {
+        const existingMyCodes = await getAll("myCodes") || [];
+        const codesByCode = new Map(existingMyCodes.map((c) => [c.code, c]));
+        for (const row of sheet.rows) {
+          processedRows++;
+          const code = (row["Code"] || "").toString().trim();
+          console.log("[RR Companion BG] My Codes row:", { hasCode: !!code, name: row["Name"], fiction: row["Fiction"] });
+          if (!code) {
+            skipped++;
+            continue;
+          }
+          if (codesByCode.has(code)) {
+            duplicates++;
+            continue;
+          }
+          const name = (row["Name"] || "").toString().trim();
+          const fictionTitle = (row["Fiction"] || "").toString().trim();
+          let fictionId = "";
+          if (fictionTitle) {
+            const fic = myFictions.find((f) => f.title === fictionTitle);
+            if (fic)
+              fictionId = String(fic.fictionId);
+          }
+          if (!fictionId) {
+            const m = code.match(/\/fiction\/(\d+)/);
+            if (m)
+              fictionId = m[1];
+          }
+          const id = await save("myCodes", { name, fictionId, code });
+          console.log("[RR Companion BG] Saved myCode", { id, name, fictionId });
+          codesByCode.set(code, { id, name, fictionId, code });
+          imported++;
+        }
+        continue;
+      }
+      if (isContacts) {
+        for (const row of sheet.rows) {
+          processedRows++;
+          const authorName = (row["Author"] || "").toString().trim();
+          if (!authorName) {
+            skipped++;
+            continue;
+          }
+          const incoming = {
+            discordUsername: (row["Discord"] || "").toString(),
+            profileUrl: (row["Profile URL"] || "").toString(),
+            authorAvatar: (row["Avatar URL"] || "").toString()
+          };
+          const existing = contactCache.get(authorName);
+          if (existing) {
+            const merged = { ...existing };
+            if (incoming.discordUsername && incoming.discordUsername !== existing.discordUsername)
+              merged.discordUsername = incoming.discordUsername;
+            if (incoming.profileUrl && !existing.profileUrl)
+              merged.profileUrl = incoming.profileUrl;
+            if (incoming.authorAvatar && !existing.authorAvatar)
+              merged.authorAvatar = incoming.authorAvatar;
+            await save("contacts", merged);
+            contactCache.set(authorName, merged);
+            duplicates++;
+          } else {
+            const newContact = {
+              authorName,
+              discordUsername: incoming.discordUsername,
+              profileUrl: incoming.profileUrl,
+              authorAvatar: incoming.authorAvatar
+            };
+            const id = await save("contacts", newContact);
+            contactCache.set(authorName, { ...newContact, id });
+            imported++;
+          }
+        }
+        continue;
+      }
       let myFiction = null;
       if (!isUnscheduled) {
         myFiction = myFictions.find((f) => {
@@ -1680,14 +1764,36 @@ async function runImport(workbookData) {
             continue;
           }
           const rrFictionId = match[1];
-          let parsedInfo = { fictionId: rrFictionId };
-          try {
-            const details = await fetchFictionDetails(rrFictionId);
-            if (details) {
-              parsedInfo = { ...parsedInfo, ...details };
+          let parsedInfo = {
+            fictionId: rrFictionId,
+            fictionTitle: (row["Fiction"] || "").toString().trim(),
+            fictionUrl: (row["Fiction URL"] || "").toString().trim(),
+            authorName: (row["Author"] || "").toString().trim(),
+            coverUrl: (row["Cover URL"] || "").toString().trim(),
+            profileUrl: (row["Profile URL"] || "").toString().trim(),
+            authorAvatar: (row["Avatar URL"] || "").toString().trim()
+          };
+          if (parsedInfo.authorName) {
+            const cached = contactCache.get(parsedInfo.authorName);
+            if (cached) {
+              if (!parsedInfo.profileUrl && cached.profileUrl)
+                parsedInfo.profileUrl = cached.profileUrl;
+              if (!parsedInfo.authorAvatar && cached.authorAvatar)
+                parsedInfo.authorAvatar = cached.authorAvatar;
             }
-          } catch (fetchErr) {
-            console.log("[RR Companion BG] Could not fetch details for", rrFictionId);
+          }
+          if (!parsedInfo.fictionTitle || !parsedInfo.authorName || !parsedInfo.coverUrl) {
+            try {
+              const details = await fetchFictionDetails(rrFictionId);
+              if (details) {
+                for (const [k, v] of Object.entries(details)) {
+                  if (v && !parsedInfo[k])
+                    parsedInfo[k] = v;
+                }
+              }
+            } catch (fetchErr) {
+              console.log("[RR Companion BG] Could not fetch details for", rrFictionId);
+            }
           }
           if (parsedInfo.authorName) {
             let contact = contactCache.get(parsedInfo.authorName);
@@ -1755,10 +1861,10 @@ async function runImport(workbookData) {
             code,
             schedules: newSchedule ? [newSchedule] : [],
             fictionId: rrFictionId,
-            fictionTitle: parsedInfo.fictionTitle || row["Fiction"] || "",
-            fictionUrl: parsedInfo.fictionUrl || row["Fiction URL"] || "",
+            fictionTitle: parsedInfo.fictionTitle || "",
+            fictionUrl: parsedInfo.fictionUrl || "",
             coverUrl: parsedInfo.coverUrl || "",
-            authorName: parsedInfo.authorName || row["Author"] || "",
+            authorName: parsedInfo.authorName || "",
             authorAvatar: parsedInfo.authorAvatar || "",
             profileUrl: parsedInfo.profileUrl || "",
             expectedReturnDate: row["Expected Return"] || "",

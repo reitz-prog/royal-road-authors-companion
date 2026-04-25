@@ -32,6 +32,7 @@ export async function exportToExcel() {
         'Fiction': shoutout.fictionTitle || '',
         'Author': shoutout.authorName || '',
         'Fiction URL': shoutout.fictionUrl || '',
+        'Cover URL': shoutout.coverUrl || '',
         'Expected Return': shoutout.expectedReturnDate || '',
         'Swapped Date': shoutout.swappedDate || '',
         'Swapped Chapter': shoutout.swappedChapter || '',
@@ -81,6 +82,7 @@ export async function exportToExcel() {
         'Fiction': shoutout.fictionTitle || '',
         'Author': shoutout.authorName || '',
         'Fiction URL': shoutout.fictionUrl || '',
+        'Cover URL': shoutout.coverUrl || '',
         'Chapter': schedule.chapter || '',
         'Chapter URL': schedule.chapterUrl || '',
         'Expected Return': shoutout.expectedReturnDate || '',
@@ -112,6 +114,7 @@ export async function exportToExcel() {
       { wch: 30 },  // Fiction
       { wch: 20 },  // Author
       { wch: 40 },  // Fiction URL
+      { wch: 50 },  // Cover URL
       { wch: 25 },  // Chapter
       { wch: 50 },  // Chapter URL
       { wch: 12 },  // Expected Return
@@ -133,6 +136,7 @@ export async function exportToExcel() {
       { wch: 30 },  // Fiction
       { wch: 20 },  // Author
       { wch: 40 },  // Fiction URL
+      { wch: 50 },  // Cover URL
       { wch: 12 },  // Expected Return
       { wch: 12 },  // Swapped Date
       { wch: 25 },  // Swapped Chapter
@@ -142,8 +146,51 @@ export async function exportToExcel() {
     XLSX.utils.book_append_sheet(workbook, unscheduledSheet, 'Unscheduled');
   }
 
-  // If no data, create template
-  if (fictionShoutouts.size === 0 && unscheduledRows.length === 0) {
+  // My Codes sheet — round-trips the user's saved shoutout codes so the
+  // whole library is portable. Code is the only required round-trip field;
+  // Name and Fiction are best-effort aids for the importer.
+  const myCodes = await db.getAll('myCodes') || [];
+  if (myCodes.length > 0) {
+    const codeRows = myCodes.map(c => {
+      const fiction = myFictions.find(f => String(f.fictionId) === String(c.fictionId));
+      return {
+        'Name': c.name || '',
+        'Fiction': fiction?.title || '',
+        'Code': c.code || '',
+      };
+    });
+    const codeSheet = XLSX.utils.json_to_sheet(codeRows);
+    codeSheet['!cols'] = [
+      { wch: 25 },  // Name
+      { wch: 30 },  // Fiction
+      { wch: 80 },  // Code
+    ];
+    XLSX.utils.book_append_sheet(workbook, codeSheet, 'My Codes');
+  }
+
+  // Contacts sheet — every author we've tracked, including their Discord
+  // username, profile URL, and avatar URL. Author is the only required
+  // round-trip field; everything else may be empty.
+  const contacts = await db.getAll('contacts') || [];
+  if (contacts.length > 0) {
+    const contactRows = contacts.map(c => ({
+      'Author': c.authorName || '',
+      'Discord': c.discordUsername || '',
+      'Profile URL': c.profileUrl || '',
+      'Avatar URL': c.authorAvatar || '',
+    }));
+    const contactSheet = XLSX.utils.json_to_sheet(contactRows);
+    contactSheet['!cols'] = [
+      { wch: 25 },  // Author
+      { wch: 25 },  // Discord
+      { wch: 50 },  // Profile URL
+      { wch: 50 },  // Avatar URL
+    ];
+    XLSX.utils.book_append_sheet(workbook, contactSheet, 'Contacts');
+  }
+
+  // If no data anywhere, create a tiny placeholder so the file isn't empty.
+  if (fictionShoutouts.size === 0 && unscheduledRows.length === 0 && myCodes.length === 0 && contacts.length === 0) {
     const templateSheet = XLSX.utils.json_to_sheet([{ 'Date': '', 'Code': '' }]);
     XLSX.utils.book_append_sheet(workbook, templateSheet, 'Template');
   }
@@ -198,6 +245,18 @@ export async function downloadEmptyTemplate() {
   const unscheduled = XLSX.utils.json_to_sheet([], { header: columns });
   unscheduled['!cols'] = colWidths;
   XLSX.utils.book_append_sheet(workbook, unscheduled, 'Unscheduled');
+
+  // Empty My Codes + Contacts sheets so users have somewhere to paste/edit
+  // these without re-discovering the column names.
+  const codesHeader = ['Name', 'Fiction', 'Code'];
+  const codesSheet = XLSX.utils.json_to_sheet([], { header: codesHeader });
+  codesSheet['!cols'] = [{ wch: 25 }, { wch: 30 }, { wch: 80 }];
+  XLSX.utils.book_append_sheet(workbook, codesSheet, 'My Codes');
+
+  const contactsHeader = ['Author', 'Discord', 'Profile URL', 'Avatar URL'];
+  const contactsSheet = XLSX.utils.json_to_sheet([], { header: contactsHeader });
+  contactsSheet['!cols'] = [{ wch: 25 }, { wch: 25 }, { wch: 50 }, { wch: 50 }];
+  XLSX.utils.book_append_sheet(workbook, contactsSheet, 'Contacts');
 
   const filename = 'royal_road_shoutouts_template.xlsx';
   XLSX.writeFile(workbook, filename);

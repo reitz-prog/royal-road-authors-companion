@@ -35408,6 +35408,7 @@
           "Fiction": shoutout.fictionTitle || "",
           "Author": shoutout.authorName || "",
           "Fiction URL": shoutout.fictionUrl || "",
+          "Cover URL": shoutout.coverUrl || "",
           "Expected Return": shoutout.expectedReturnDate || "",
           "Swapped Date": shoutout.swappedDate || "",
           "Swapped Chapter": shoutout.swappedChapter || "",
@@ -35451,6 +35452,7 @@
           "Fiction": shoutout.fictionTitle || "",
           "Author": shoutout.authorName || "",
           "Fiction URL": shoutout.fictionUrl || "",
+          "Cover URL": shoutout.coverUrl || "",
           "Chapter": schedule.chapter || "",
           "Chapter URL": schedule.chapterUrl || "",
           "Expected Return": shoutout.expectedReturnDate || "",
@@ -35479,6 +35481,8 @@
         // Author
         { wch: 40 },
         // Fiction URL
+        { wch: 50 },
+        // Cover URL
         { wch: 25 },
         // Chapter
         { wch: 50 },
@@ -35509,6 +35513,8 @@
         // Author
         { wch: 40 },
         // Fiction URL
+        { wch: 50 },
+        // Cover URL
         { wch: 12 },
         // Expected Return
         { wch: 12 },
@@ -35522,7 +35528,49 @@
       ];
       utils.book_append_sheet(workbook, unscheduledSheet, "Unscheduled");
     }
-    if (fictionShoutouts.size === 0 && unscheduledRows.length === 0) {
+    const myCodes = await getAll("myCodes") || [];
+    if (myCodes.length > 0) {
+      const codeRows = myCodes.map((c4) => {
+        const fiction = myFictions.find((f5) => String(f5.fictionId) === String(c4.fictionId));
+        return {
+          "Name": c4.name || "",
+          "Fiction": fiction?.title || "",
+          "Code": c4.code || ""
+        };
+      });
+      const codeSheet = utils.json_to_sheet(codeRows);
+      codeSheet["!cols"] = [
+        { wch: 25 },
+        // Name
+        { wch: 30 },
+        // Fiction
+        { wch: 80 }
+        // Code
+      ];
+      utils.book_append_sheet(workbook, codeSheet, "My Codes");
+    }
+    const contacts = await getAll("contacts") || [];
+    if (contacts.length > 0) {
+      const contactRows = contacts.map((c4) => ({
+        "Author": c4.authorName || "",
+        "Discord": c4.discordUsername || "",
+        "Profile URL": c4.profileUrl || "",
+        "Avatar URL": c4.authorAvatar || ""
+      }));
+      const contactSheet = utils.json_to_sheet(contactRows);
+      contactSheet["!cols"] = [
+        { wch: 25 },
+        // Author
+        { wch: 25 },
+        // Discord
+        { wch: 50 },
+        // Profile URL
+        { wch: 50 }
+        // Avatar URL
+      ];
+      utils.book_append_sheet(workbook, contactSheet, "Contacts");
+    }
+    if (fictionShoutouts.size === 0 && unscheduledRows.length === 0 && myCodes.length === 0 && contacts.length === 0) {
       const templateSheet = utils.json_to_sheet([{ "Date": "", "Code": "" }]);
       utils.book_append_sheet(workbook, templateSheet, "Template");
     }
@@ -35553,6 +35601,14 @@
     const unscheduled = utils.json_to_sheet([], { header: columns });
     unscheduled["!cols"] = colWidths;
     utils.book_append_sheet(workbook, unscheduled, "Unscheduled");
+    const codesHeader = ["Name", "Fiction", "Code"];
+    const codesSheet = utils.json_to_sheet([], { header: codesHeader });
+    codesSheet["!cols"] = [{ wch: 25 }, { wch: 30 }, { wch: 80 }];
+    utils.book_append_sheet(workbook, codesSheet, "My Codes");
+    const contactsHeader = ["Author", "Discord", "Profile URL", "Avatar URL"];
+    const contactsSheet = utils.json_to_sheet([], { header: contactsHeader });
+    contactsSheet["!cols"] = [{ wch: 25 }, { wch: 25 }, { wch: 50 }, { wch: 50 }];
+    utils.book_append_sheet(workbook, contactsSheet, "Contacts");
     const filename = "royal_road_shoutouts_template.xlsx";
     writeFileSync(workbook, filename);
     logger6.info("Template download complete", { filename });
@@ -39537,6 +39593,7 @@
     const [progress, setProgress] = d3(null);
     const [result, setResult] = d3(null);
     const [error, setError] = d3(null);
+    const [activeTab, setActiveTab] = d3("excel");
     const fileInputRef = A2(null);
     const csvInputRef = A2(null);
     const [myFictions, setMyFictions] = d3([]);
@@ -39728,145 +39785,199 @@
         isOpen,
         onClose: handleClose,
         title: "Export / Import",
-        className: "rr-modal-medium",
-        children: /* @__PURE__ */ u4("div", { class: "rr-export-import-content", children: [
-          /* @__PURE__ */ u4("div", { class: "rr-export-section", children: [
-            /* @__PURE__ */ u4("h5", { children: "Export to Excel" }),
-            /* @__PURE__ */ u4("p", { class: "text-muted", children: "Download all your scheduled shoutouts as an Excel file. Each of your fictions will be a separate sheet." }),
+        className: "rr-modal-export-import",
+        children: /* @__PURE__ */ u4("div", { class: "rr-export-import-layout", children: [
+          /* @__PURE__ */ u4("nav", { class: "rr-export-import-tabs", children: [
             /* @__PURE__ */ u4(
               "button",
               {
-                class: "btn btn-primary",
-                onClick: handleExport,
-                disabled: exporting || importing,
-                children: exporting ? /* @__PURE__ */ u4(S, { children: [
-                  /* @__PURE__ */ u4("i", { class: "fa fa-spinner fa-spin" }),
-                  " Exporting..."
-                ] }) : /* @__PURE__ */ u4(S, { children: [
-                  /* @__PURE__ */ u4("i", { class: "fa fa-download" }),
-                  " Export"
-                ] })
-              }
-            )
-          ] }),
-          /* @__PURE__ */ u4("hr", {}),
-          /* @__PURE__ */ u4("div", { class: "rr-import-section", children: [
-            /* @__PURE__ */ u4("h5", { children: "Import from Excel" }),
-            /* @__PURE__ */ u4("p", { class: "text-muted", children: [
-              "Import shoutouts from an ",
-              /* @__PURE__ */ u4("code", { children: ".xlsx" }),
-              " / ",
-              /* @__PURE__ */ u4("code", { children: ".xls" }),
-              " workbook. Sheet names should match your fiction titles \u2014 that's how rows are attributed to a fiction. Only the ",
-              /* @__PURE__ */ u4("strong", { children: "Date" }),
-              " and",
-              /* @__PURE__ */ u4("strong", { children: "Code" }),
-              " columns are required."
-            ] }),
-            /* @__PURE__ */ u4(
-              "input",
-              {
-                ref: fileInputRef,
-                type: "file",
-                accept: ".xlsx,.xls",
-                style: { display: "none" },
-                onChange: handleFileSelect
+                class: `rr-export-import-tab ${activeTab === "excel" ? "active" : ""}`,
+                onClick: () => setActiveTab("excel"),
+                children: "Excel"
               }
             ),
             /* @__PURE__ */ u4(
               "button",
               {
-                class: "btn btn-secondary",
-                onClick: handleImportClick,
-                disabled: exporting || importing,
-                children: importing ? /* @__PURE__ */ u4(S, { children: [
-                  /* @__PURE__ */ u4("i", { class: "fa fa-spinner fa-spin" }),
-                  " Importing..."
-                ] }) : /* @__PURE__ */ u4(S, { children: [
-                  /* @__PURE__ */ u4("i", { class: "fa fa-file-excel-o" }),
-                  " Import Excel"
-                ] })
+                class: `rr-export-import-tab ${activeTab === "csv" ? "active" : ""}`,
+                onClick: () => setActiveTab("csv"),
+                children: "CSV"
+              }
+            ),
+            writersGuildEnabled && /* @__PURE__ */ u4(
+              "button",
+              {
+                class: `rr-export-import-tab ${activeTab === "guild" ? "active" : ""}`,
+                onClick: () => setActiveTab("guild"),
+                children: "Writers Guild"
               }
             )
           ] }),
-          /* @__PURE__ */ u4("hr", {}),
-          /* @__PURE__ */ u4("div", { class: "rr-import-section", children: [
-            /* @__PURE__ */ u4("h5", { children: "Import from CSV" }),
-            /* @__PURE__ */ u4("p", { class: "text-muted", children: [
-              "Import shoutouts from a single ",
-              /* @__PURE__ */ u4("code", { children: ".csv" }),
-              " file. Required columns:",
-              /* @__PURE__ */ u4("strong", { children: " Date" }),
-              " and ",
-              /* @__PURE__ */ u4("strong", { children: "Code" }),
-              ". Pick which fiction the rows should be attributed to (CSV files have no sheet name, so this is how we know where to put them)."
+          /* @__PURE__ */ u4("div", { class: "rr-export-import-content", children: [
+            activeTab === "excel" && /* @__PURE__ */ u4(S, { children: [
+              /* @__PURE__ */ u4("div", { class: "rr-export-section", children: [
+                /* @__PURE__ */ u4("h5", { children: "Export to Excel" }),
+                /* @__PURE__ */ u4("p", { class: "text-muted", children: [
+                  "Download everything as an ",
+                  /* @__PURE__ */ u4("code", { children: ".xlsx" }),
+                  ": one sheet per fiction for scheduled shoutouts, plus ",
+                  /* @__PURE__ */ u4("strong", { children: "My Codes" }),
+                  " and",
+                  /* @__PURE__ */ u4("strong", { children: " Contacts" }),
+                  " sheets so the whole library is portable."
+                ] }),
+                /* @__PURE__ */ u4(
+                  "button",
+                  {
+                    class: "btn btn-primary",
+                    onClick: handleExport,
+                    disabled: exporting || importing,
+                    children: exporting ? /* @__PURE__ */ u4(S, { children: [
+                      /* @__PURE__ */ u4("i", { class: "fa fa-spinner fa-spin" }),
+                      " Exporting..."
+                    ] }) : /* @__PURE__ */ u4(S, { children: [
+                      /* @__PURE__ */ u4("i", { class: "fa fa-download" }),
+                      " Export"
+                    ] })
+                  }
+                )
+              ] }),
+              /* @__PURE__ */ u4("hr", {}),
+              /* @__PURE__ */ u4("div", { class: "rr-import-section", children: [
+                /* @__PURE__ */ u4("h5", { children: "Import from Excel" }),
+                /* @__PURE__ */ u4("p", { class: "text-muted", children: [
+                  "Import an ",
+                  /* @__PURE__ */ u4("code", { children: ".xlsx" }),
+                  " / ",
+                  /* @__PURE__ */ u4("code", { children: ".xls" }),
+                  " workbook. Sheet names matching your fiction titles attribute their rows to that fiction; sheets named ",
+                  /* @__PURE__ */ u4("strong", { children: "My Codes" }),
+                  " and",
+                  /* @__PURE__ */ u4("strong", { children: " Contacts" }),
+                  " are imported into those stores. Only",
+                  " ",
+                  /* @__PURE__ */ u4("strong", { children: "Code" }),
+                  " is required for shoutouts (and",
+                  " ",
+                  /* @__PURE__ */ u4("strong", { children: "My Codes" }),
+                  "); only ",
+                  /* @__PURE__ */ u4("strong", { children: "Author" }),
+                  " for",
+                  " ",
+                  /* @__PURE__ */ u4("strong", { children: "Contacts" }),
+                  "."
+                ] }),
+                /* @__PURE__ */ u4(
+                  "input",
+                  {
+                    ref: fileInputRef,
+                    type: "file",
+                    accept: ".xlsx,.xls",
+                    style: { display: "none" },
+                    onChange: handleFileSelect
+                  }
+                ),
+                /* @__PURE__ */ u4(
+                  "button",
+                  {
+                    class: "btn btn-secondary",
+                    onClick: handleImportClick,
+                    disabled: exporting || importing,
+                    children: importing ? /* @__PURE__ */ u4(S, { children: [
+                      /* @__PURE__ */ u4("i", { class: "fa fa-spinner fa-spin" }),
+                      " Importing..."
+                    ] }) : /* @__PURE__ */ u4(S, { children: [
+                      /* @__PURE__ */ u4("i", { class: "fa fa-file-excel-o" }),
+                      " Import Excel"
+                    ] })
+                  }
+                )
+              ] }),
+              /* @__PURE__ */ u4("hr", {}),
+              /* @__PURE__ */ u4("div", { class: "rr-template-section", children: [
+                /* @__PURE__ */ u4("h5", { children: "Empty template" }),
+                /* @__PURE__ */ u4("p", { class: "text-muted", children: [
+                  "Download a blank ",
+                  /* @__PURE__ */ u4("code", { children: ".xlsx" }),
+                  " with one sheet per fiction (just ",
+                  /* @__PURE__ */ u4("strong", { children: "Date" }),
+                  " and ",
+                  /* @__PURE__ */ u4("strong", { children: "Code" }),
+                  ") plus empty",
+                  /* @__PURE__ */ u4("strong", { children: " My Codes" }),
+                  " and ",
+                  /* @__PURE__ */ u4("strong", { children: "Contacts" }),
+                  " sheets. Fill it in, then import above."
+                ] }),
+                /* @__PURE__ */ u4(
+                  "button",
+                  {
+                    class: "btn btn-outline-primary",
+                    onClick: handleDownloadTemplate,
+                    disabled: exporting || importing,
+                    children: [
+                      /* @__PURE__ */ u4("i", { class: "fa fa-file-excel-o" }),
+                      " Download empty template"
+                    ]
+                  }
+                )
+              ] })
             ] }),
-            /* @__PURE__ */ u4("div", { class: "rr-csv-target-row", children: [
-              /* @__PURE__ */ u4("label", { class: "rr-csv-target-label", for: "rr-csv-target", children: "Attribute rows to:" }),
+            activeTab === "csv" && /* @__PURE__ */ u4("div", { class: "rr-import-section", children: [
+              /* @__PURE__ */ u4("h5", { children: "Import from CSV" }),
+              /* @__PURE__ */ u4("p", { class: "text-muted", children: [
+                "Import a single ",
+                /* @__PURE__ */ u4("code", { children: ".csv" }),
+                " file. Required columns:",
+                " ",
+                /* @__PURE__ */ u4("strong", { children: "Date" }),
+                " and ",
+                /* @__PURE__ */ u4("strong", { children: "Code" }),
+                ". CSVs have no sheet name, so pick which fiction the rows should be attributed to."
+              ] }),
+              /* @__PURE__ */ u4("div", { class: "rr-csv-target-row", children: [
+                /* @__PURE__ */ u4("label", { class: "rr-csv-target-label", for: "rr-csv-target", children: "Attribute rows to:" }),
+                /* @__PURE__ */ u4(
+                  ThemedSelect,
+                  {
+                    id: "rr-csv-target",
+                    size: "sm",
+                    value: csvTargetFictionId,
+                    onChange: (e4) => setCsvTargetFictionId(e4.target.value),
+                    children: [
+                      /* @__PURE__ */ u4("option", { value: "", children: "Unscheduled (no fiction)" }),
+                      myFictions.map((f5) => /* @__PURE__ */ u4("option", { value: String(f5.fictionId), children: f5.title || `Fiction ${f5.fictionId}` }, f5.fictionId))
+                    ]
+                  }
+                )
+              ] }),
               /* @__PURE__ */ u4(
-                ThemedSelect,
+                "input",
                 {
-                  id: "rr-csv-target",
-                  size: "sm",
-                  value: csvTargetFictionId,
-                  onChange: (e4) => setCsvTargetFictionId(e4.target.value),
-                  children: [
-                    /* @__PURE__ */ u4("option", { value: "", children: "Unscheduled (no fiction)" }),
-                    myFictions.map((f5) => /* @__PURE__ */ u4("option", { value: String(f5.fictionId), children: f5.title || `Fiction ${f5.fictionId}` }, f5.fictionId))
-                  ]
+                  ref: csvInputRef,
+                  type: "file",
+                  accept: ".csv",
+                  style: { display: "none" },
+                  onChange: handleCsvSelect
+                }
+              ),
+              /* @__PURE__ */ u4(
+                "button",
+                {
+                  class: "btn btn-secondary",
+                  onClick: handleCsvImportClick,
+                  disabled: exporting || importing,
+                  children: importing ? /* @__PURE__ */ u4(S, { children: [
+                    /* @__PURE__ */ u4("i", { class: "fa fa-spinner fa-spin" }),
+                    " Importing..."
+                  ] }) : /* @__PURE__ */ u4(S, { children: [
+                    /* @__PURE__ */ u4("i", { class: "fa fa-file-text-o" }),
+                    " Import CSV"
+                  ] })
                 }
               )
             ] }),
-            /* @__PURE__ */ u4(
-              "input",
-              {
-                ref: csvInputRef,
-                type: "file",
-                accept: ".csv",
-                style: { display: "none" },
-                onChange: handleCsvSelect
-              }
-            ),
-            /* @__PURE__ */ u4(
-              "button",
-              {
-                class: "btn btn-secondary",
-                onClick: handleCsvImportClick,
-                disabled: exporting || importing,
-                children: importing ? /* @__PURE__ */ u4(S, { children: [
-                  /* @__PURE__ */ u4("i", { class: "fa fa-spinner fa-spin" }),
-                  " Importing..."
-                ] }) : /* @__PURE__ */ u4(S, { children: [
-                  /* @__PURE__ */ u4("i", { class: "fa fa-file-text-o" }),
-                  " Import CSV"
-                ] })
-              }
-            )
-          ] }),
-          progress && /* @__PURE__ */ u4("div", { class: "rr-import-progress mt-3", children: [
-            /* @__PURE__ */ u4("div", { class: "progress", children: /* @__PURE__ */ u4(
-              "div",
-              {
-                class: "progress-bar",
-                style: { width: `${Math.round(progress.current / progress.total * 100)}%` }
-              }
-            ) }),
-            /* @__PURE__ */ u4("small", { class: "text-muted", children: [
-              progress.current,
-              " / ",
-              progress.total,
-              " rows processed (",
-              progress.imported,
-              " imported, ",
-              progress.duplicates,
-              " duplicates, ",
-              progress.skipped,
-              " skipped)"
-            ] })
-          ] }),
-          writersGuildEnabled && /* @__PURE__ */ u4(S, { children: [
-            /* @__PURE__ */ u4("hr", {}),
-            /* @__PURE__ */ u4("div", { class: "rr-import-section", children: [
+            activeTab === "guild" && writersGuildEnabled && /* @__PURE__ */ u4("div", { class: "rr-import-section", children: [
               /* @__PURE__ */ u4("h5", { children: "Import from Writers Guild" }),
               /* @__PURE__ */ u4("p", { class: "text-muted", children: "Import your scheduled shoutouts from rrwritersguild.com. Make sure you're logged in first." }),
               /* @__PURE__ */ u4(
@@ -39903,46 +40014,46 @@
                   ] }, i5)) })
                 ] })
               ] })
-            ] })
-          ] }),
-          /* @__PURE__ */ u4("hr", {}),
-          /* @__PURE__ */ u4("div", { class: "rr-template-section", children: [
-            /* @__PURE__ */ u4("h5", { children: "Empty template" }),
-            /* @__PURE__ */ u4("p", { class: "text-muted", children: [
-              "Download a blank ",
-              /* @__PURE__ */ u4("code", { children: ".xlsx" }),
-              " with one sheet per fiction and just the two columns you need (Date and Code). Fill it in, then import above."
             ] }),
-            /* @__PURE__ */ u4(
-              "button",
-              {
-                class: "btn btn-primary",
-                onClick: handleDownloadTemplate,
-                disabled: exporting || importing,
-                children: [
-                  /* @__PURE__ */ u4("i", { class: "fa fa-file-excel-o" }),
-                  " Download empty template"
-                ]
-              }
-            )
-          ] }),
-          result && /* @__PURE__ */ u4("div", { class: `alert alert-success mt-3`, children: [
-            /* @__PURE__ */ u4("strong", { children: result.message }),
-            result.details && /* @__PURE__ */ u4("div", { class: "mt-2", children: /* @__PURE__ */ u4("small", { children: [
-              result.details.imported,
-              " imported,",
-              result.details.duplicates,
-              " duplicates,",
-              result.details.skipped,
-              " skipped",
-              result.details.errors?.length > 0 && /* @__PURE__ */ u4(S, { children: [
-                ", ",
-                result.details.errors.length,
-                " errors"
+            progress && /* @__PURE__ */ u4("div", { class: "rr-import-progress mt-3", children: [
+              /* @__PURE__ */ u4("div", { class: "progress", children: /* @__PURE__ */ u4(
+                "div",
+                {
+                  class: "progress-bar",
+                  style: { width: `${Math.round(progress.current / progress.total * 100)}%` }
+                }
+              ) }),
+              /* @__PURE__ */ u4("small", { class: "text-muted", children: [
+                progress.current,
+                " / ",
+                progress.total,
+                " rows processed (",
+                progress.imported,
+                " imported, ",
+                progress.duplicates,
+                " duplicates, ",
+                progress.skipped,
+                " skipped)"
               ] })
-            ] }) })
-          ] }),
-          error && /* @__PURE__ */ u4("div", { class: "alert alert-danger mt-3", children: error })
+            ] }),
+            result && /* @__PURE__ */ u4("div", { class: `alert alert-success mt-3`, children: [
+              /* @__PURE__ */ u4("strong", { children: result.message }),
+              result.details && /* @__PURE__ */ u4("div", { class: "mt-2", children: /* @__PURE__ */ u4("small", { children: [
+                result.details.imported,
+                " imported,",
+                result.details.duplicates,
+                " duplicates,",
+                result.details.skipped,
+                " skipped",
+                result.details.errors?.length > 0 && /* @__PURE__ */ u4(S, { children: [
+                  ", ",
+                  result.details.errors.length,
+                  " errors"
+                ] })
+              ] }) })
+            ] }),
+            error && /* @__PURE__ */ u4("div", { class: "alert alert-danger mt-3", children: error })
+          ] })
         ] })
       }
     );
@@ -45141,7 +45252,7 @@
   var ScannerModal_default = "/* Scanner Modal Styles */\n\n.rr-scanner-content {\n  display: flex;\n  flex-direction: column;\n  gap: 1rem;\n}\n\n.rr-scanner-fiction-select {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n}\n\n.rr-scanner-fiction-select select {\n  max-width: 400px;\n}\n\n.rr-scanner-description {\n  color: inherit;\n  opacity: 0.7;\n  font-size: 0.9rem;\n  margin: 0;\n}\n\n/* Progress */\n.rr-scanner-progress {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  padding: 1rem;\n  background: rgba(128, 128, 128, 0.1);\n  border-radius: 8px;\n}\n\n.rr-scanner-progress-bar {\n  height: 8px;\n  background: rgba(128, 128, 128, 0.2);\n  border-radius: 4px;\n  overflow: hidden;\n}\n\n.rr-scanner-progress-fill {\n  height: 100%;\n  background: #337ab7;\n  border-radius: 4px;\n  transition: width 0.3s ease;\n}\n\n.rr-scanner-progress-text {\n  font-size: 0.85rem;\n  opacity: 0.8;\n}\n\n.rr-scanner-found-count {\n  font-size: 0.85rem;\n  color: #28a745;\n  font-weight: 500;\n}\n\n/* Results */\n.rr-scanner-results {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  max-height: 200px;\n  overflow-y: auto;\n}\n\n.rr-scanner-results-header {\n  font-weight: 600;\n  font-size: 0.9rem;\n}\n\n.rr-scanner-results-list {\n  display: flex;\n  flex-direction: column;\n  gap: 0.25rem;\n}\n\n.rr-scanner-result-item {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  font-size: 0.85rem;\n  padding: 0.25rem 0;\n  border-bottom: 1px solid rgba(128, 128, 128, 0.1);\n}\n\n.rr-scanner-result-chapter {\n  font-weight: 500;\n  flex-shrink: 0;\n  max-width: 200px;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.rr-scanner-result-arrow {\n  opacity: 0.5;\n  flex-shrink: 0;\n}\n\n.rr-scanner-result-fiction {\n  color: #337ab7;\n  flex: 1;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.rr-scanner-result-author {\n  opacity: 0.6;\n  flex-shrink: 0;\n  font-size: 0.8rem;\n}\n\n/* Summary */\n.rr-scanner-summary {\n  padding: 1rem;\n  border-radius: 8px;\n  font-weight: 500;\n}\n\n.rr-scanner-summary-success {\n  background: rgba(40, 167, 69, 0.1);\n  color: #28a745;\n}\n\n.rr-scanner-summary-error {\n  background: rgba(220, 53, 69, 0.1);\n  color: #dc3545;\n}\n\n/* Checkbox */\n.rr-scanner-checkbox {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  cursor: pointer;\n  font-size: 0.9rem;\n}\n\n.rr-scanner-checkbox input {\n  cursor: pointer;\n}\n\n.rr-scanner-batch-label {\n  font-size: 0.8125rem;\n  font-weight: 500;\n  margin-bottom: 0.35rem;\n  opacity: 0.85;\n}\n\n.rr-scanner-phase {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  padding: 0.35rem 0.625rem;\n  margin-bottom: 0.75rem;\n  font-size: 0.75rem;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  border-radius: 999px;\n  background: rgba(0, 0, 0, 0.04);\n  width: fit-content;\n}\n.rr-scanner-phase-dot {\n  width: 7px;\n  height: 7px;\n  border-radius: 50%;\n  background: #999;\n  flex-shrink: 0;\n}\n.rr-scanner-phase--idle .rr-scanner-phase-dot { background: #9ca3af; }\n.rr-scanner-phase--scanning .rr-scanner-phase-dot {\n  background: #3b82f6;\n  animation: rr-scanner-pulse 1.2s ease-in-out infinite;\n}\n.rr-scanner-phase--swap-check .rr-scanner-phase-dot {\n  background: #a855f7;\n  animation: rr-scanner-pulse 1.2s ease-in-out infinite;\n}\n.rr-scanner-phase--complete .rr-scanner-phase-dot { background: #22c55e; }\n.rr-scanner-phase--error .rr-scanner-phase-dot { background: #ef4444; }\n@keyframes rr-scanner-pulse {\n  0%, 100% { opacity: 1; transform: scale(1); }\n  50% { opacity: 0.55; transform: scale(0.85); }\n}\n";
 
   // src/shout_out_swapper/ui/export/ExportImportModal.css
-  var ExportImportModal_default = "/* Export/Import Modal styles */\n\n.rr-export-import-content {\n  padding: 0.5rem 0;\n}\n\n.rr-export-section,\n.rr-import-section {\n  margin-bottom: 1rem;\n}\n\n.rr-export-section h5,\n.rr-import-section h5 {\n  margin-bottom: 0.5rem;\n  font-weight: 600;\n}\n\n.rr-export-section p,\n.rr-import-section p {\n  margin-bottom: 0.75rem;\n  font-size: 0.85rem;\n}\n\n.rr-csv-target-row {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  margin-bottom: 0.75rem;\n}\n\n.rr-csv-target-label {\n  font-size: 0.8rem;\n  white-space: nowrap;\n  margin-bottom: 0;\n}\n\n.rr-csv-target-row select {\n  flex: 1;\n  min-width: 0;\n}\n\n.rr-template-section {\n  margin-top: 0.25rem;\n}\n\n.rr-template-section h5 {\n  margin-bottom: 0.5rem;\n  font-weight: 600;\n}\n\n.rr-template-section p {\n  margin-bottom: 0.75rem;\n  font-size: 0.85rem;\n}\n\n.rr-import-progress {\n  margin-top: 1rem;\n}\n\n.rr-import-progress .progress {\n  height: 8px;\n  border-radius: 4px;\n  background: rgba(128, 128, 128, 0.2);\n  overflow: hidden;\n  margin-bottom: 0.5rem;\n}\n\n.rr-import-progress .progress-bar {\n  height: 100%;\n  background: #337ab7;\n  transition: width 0.2s ease;\n}\n\n.rr-import-progress small {\n  display: block;\n}\n\n.rr-guild-progress {\n  font-size: 0.85rem;\n}\n\n.rr-guild-status {\n  display: flex;\n  align-items: center;\n  gap: 0.4rem;\n  padding: 0.4rem 0.6rem;\n  background: rgba(51, 122, 183, 0.08);\n  border: 1px solid rgba(51, 122, 183, 0.2);\n  border-radius: 4px;\n  margin-bottom: 0.4rem;\n}\n\n.rr-guild-log summary {\n  cursor: pointer;\n  color: rgba(128, 128, 128, 0.85);\n  user-select: none;\n}\n\n.rr-guild-log ul {\n  list-style: none;\n  margin: 0.4rem 0 0;\n  padding: 0.4rem 0.6rem;\n  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;\n  font-size: 0.75rem;\n  background: rgba(128, 128, 128, 0.07);\n  border-radius: 4px;\n  max-height: 12rem;\n  overflow-y: auto;\n}\n\n.rr-guild-log li {\n  padding: 0.1rem 0;\n}\n\n.rr-guild-log-time {\n  color: rgba(128, 128, 128, 0.7);\n  margin-right: 0.4rem;\n}\n";
+  var ExportImportModal_default = "/* Export/Import Modal styles */\n\n.rr-export-import-content {\n  padding: 0.5rem 0;\n}\n\n.rr-export-section,\n.rr-import-section {\n  margin-bottom: 1rem;\n}\n\n.rr-export-section h5,\n.rr-import-section h5 {\n  margin-bottom: 0.5rem;\n  font-weight: 600;\n}\n\n.rr-export-section p,\n.rr-import-section p {\n  margin-bottom: 0.75rem;\n  font-size: 0.85rem;\n}\n\n.rr-csv-target-row {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  margin-bottom: 0.75rem;\n}\n\n.rr-csv-target-label {\n  font-size: 0.8rem;\n  white-space: nowrap;\n  margin-bottom: 0;\n}\n\n.rr-csv-target-row select {\n  flex: 1;\n  min-width: 0;\n}\n\n.rr-template-section {\n  margin-top: 0.25rem;\n}\n\n.rr-template-section h5 {\n  margin-bottom: 0.5rem;\n  font-weight: 600;\n}\n\n.rr-template-section p {\n  margin-bottom: 0.75rem;\n  font-size: 0.85rem;\n}\n\n.rr-import-progress {\n  margin-top: 1rem;\n}\n\n.rr-import-progress .progress {\n  height: 8px;\n  border-radius: 4px;\n  background: rgba(128, 128, 128, 0.2);\n  overflow: hidden;\n  margin-bottom: 0.5rem;\n}\n\n.rr-import-progress .progress-bar {\n  height: 100%;\n  background: #337ab7;\n  transition: width 0.2s ease;\n}\n\n.rr-import-progress small {\n  display: block;\n}\n\n.rr-guild-progress {\n  font-size: 0.85rem;\n}\n\n.rr-guild-status {\n  display: flex;\n  align-items: center;\n  gap: 0.4rem;\n  padding: 0.4rem 0.6rem;\n  background: rgba(51, 122, 183, 0.08);\n  border: 1px solid rgba(51, 122, 183, 0.2);\n  border-radius: 4px;\n  margin-bottom: 0.4rem;\n}\n\n.rr-guild-log summary {\n  cursor: pointer;\n  color: rgba(128, 128, 128, 0.85);\n  user-select: none;\n}\n\n.rr-guild-log ul {\n  list-style: none;\n  margin: 0.4rem 0 0;\n  padding: 0.4rem 0.6rem;\n  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;\n  font-size: 0.75rem;\n  background: rgba(128, 128, 128, 0.07);\n  border-radius: 4px;\n  max-height: 12rem;\n  overflow-y: auto;\n}\n\n.rr-guild-log li {\n  padding: 0.1rem 0;\n}\n\n.rr-guild-log-time {\n  color: rgba(128, 128, 128, 0.7);\n  margin-right: 0.4rem;\n}\n\n/* Export/Import modal \u2014 vertical tabs on the left, fixed-size body so the\n   modal doesn't reflow when switching tabs (mirrors the Settings modal). */\n.rr-modal-export-import {\n  width: 600px;\n  max-width: calc(100vw - 2rem);\n}\n\n.rr-modal-export-import .rr-modal-body {\n  overflow: hidden;\n}\n\n.rr-export-import-layout {\n  display: grid;\n  grid-template-columns: 160px 1fr;\n  gap: 1rem;\n  align-items: stretch;\n  height: 420px;\n}\n\n.rr-export-import-tabs {\n  display: flex;\n  flex-direction: column;\n  gap: 0.15rem;\n  border-right: 1px solid rgba(128, 128, 128, 0.2);\n  padding-right: 0.75rem;\n}\n\n.rr-export-import-tab {\n  background: transparent;\n  border: none;\n  padding: 0.55rem 0.7rem;\n  font-size: 0.9rem;\n  color: rgba(128, 128, 128, 0.95);\n  cursor: pointer;\n  text-align: left;\n  border-radius: 4px;\n  border-left: 2px solid transparent;\n  transition: background 0.12s, color 0.12s, border-color 0.12s;\n}\n\n.rr-export-import-tab:hover {\n  background: rgba(128, 128, 128, 0.08);\n  color: inherit;\n}\n\n.rr-export-import-tab.active {\n  background: rgba(51, 122, 183, 0.12);\n  border-left-color: #337ab7;\n  color: #337ab7;\n}\n\n.rr-export-import-content {\n  overflow-y: auto;\n  height: 100%;\n  min-height: 0;\n  padding-right: 0.25rem;\n}\n\n@media (max-width: 600px) {\n  .rr-export-import-layout {\n    grid-template-columns: 1fr;\n    height: auto;\n    max-height: 70vh;\n  }\n  .rr-export-import-tabs {\n    flex-direction: row;\n    flex-wrap: wrap;\n    border-right: none;\n    border-bottom: 1px solid rgba(128, 128, 128, 0.2);\n    padding-right: 0;\n    padding-bottom: 0.5rem;\n  }\n  .rr-export-import-tab {\n    border-left: none;\n    border-bottom: 2px solid transparent;\n  }\n  .rr-export-import-tab.active {\n    border-left: none;\n    border-bottom-color: #337ab7;\n  }\n}\n";
 
   // src/common/settings/ui/SettingsModal.css
   var SettingsModal_default = `/* Settings Modal Styles */

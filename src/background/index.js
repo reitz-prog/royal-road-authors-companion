@@ -1501,11 +1501,94 @@ async function runImport(workbookData) {
       total: totalRows
     });
 
+    // Process Contacts sheet first so when shoutout rows reference an author,
+    // we can pull their profileUrl / avatar / discord from contactCache
+    // instead of having to refetch the fiction page.
+    const orderedSheets = [...workbookData.sheets].sort((a, b) => {
+      const ac = (a.name || '').toLowerCase() === 'contacts';
+      const bc = (b.name || '').toLowerCase() === 'contacts';
+      if (ac !== bc) return ac ? -1 : 1;
+      return 0;
+    });
+
     // Process each sheet
     let cancelled = false;
-    for (const sheet of workbookData.sheets) {
+    for (const sheet of orderedSheets) {
       if (cancelled) break;
-      const isUnscheduled = sheet.name.toLowerCase() === 'unscheduled';
+      const sheetNameLower = (sheet.name || '').toLowerCase();
+      const isUnscheduled = sheetNameLower === 'unscheduled';
+      const isMyCodes = sheetNameLower === 'my codes' || sheetNameLower === 'mycodes';
+      const isContacts = sheetNameLower === 'contacts';
+
+      // Special sheets — handled in their own loops, then continue to next sheet.
+      if (isMyCodes) {
+        const existingMyCodes = await db.getAll('myCodes') || [];
+        const codesByCode = new Map(existingMyCodes.map(c => [c.code, c]));
+        for (const row of sheet.rows) {
+          processedRows++;
+          const code = (row['Code'] || '').toString().trim();
+          console.log('[RR Companion BG] My Codes row:', { hasCode: !!code, name: row['Name'], fiction: row['Fiction'] });
+          if (!code) { skipped++; continue; }
+          if (codesByCode.has(code)) { duplicates++; continue; }
+          const name = (row['Name'] || '').toString().trim();
+          const fictionTitle = (row['Fiction'] || '').toString().trim();
+          let fictionId = '';
+          // 1) Try to match by the fiction title column.
+          if (fictionTitle) {
+            const fic = myFictions.find(f => f.title === fictionTitle);
+            if (fic) fictionId = String(fic.fictionId);
+          }
+          // 2) Fall back to the fiction ID embedded in the code itself.
+          //    Works when the user renamed a fiction or is importing on a
+          //    fresh install where myFictions hasn't been populated.
+          if (!fictionId) {
+            const m = code.match(/\/fiction\/(\d+)/);
+            if (m) fictionId = m[1];
+          }
+          const id = await db.save('myCodes', { name, fictionId, code });
+          console.log('[RR Companion BG] Saved myCode', { id, name, fictionId });
+          codesByCode.set(code, { id, name, fictionId, code });
+          imported++;
+        }
+        continue;
+      }
+
+      if (isContacts) {
+        for (const row of sheet.rows) {
+          processedRows++;
+          const authorName = (row['Author'] || '').toString().trim();
+          if (!authorName) { skipped++; continue; }
+          const incoming = {
+            discordUsername: (row['Discord'] || '').toString(),
+            profileUrl: (row['Profile URL'] || '').toString(),
+            authorAvatar: (row['Avatar URL'] || '').toString(),
+          };
+          const existing = contactCache.get(authorName);
+          if (existing) {
+            // Merge — only fill in fields that the existing record is missing
+            // OR explicitly overwritten in the import. Keeps the import
+            // non-destructive while still letting users update via Excel.
+            const merged = { ...existing };
+            if (incoming.discordUsername && incoming.discordUsername !== existing.discordUsername) merged.discordUsername = incoming.discordUsername;
+            if (incoming.profileUrl && !existing.profileUrl) merged.profileUrl = incoming.profileUrl;
+            if (incoming.authorAvatar && !existing.authorAvatar) merged.authorAvatar = incoming.authorAvatar;
+            await db.save('contacts', merged);
+            contactCache.set(authorName, merged);
+            duplicates++;
+          } else {
+            const newContact = {
+              authorName,
+              discordUsername: incoming.discordUsername,
+              profileUrl: incoming.profileUrl,
+              authorAvatar: incoming.authorAvatar,
+            };
+            const id = await db.save('contacts', newContact);
+            contactCache.set(authorName, { ...newContact, id });
+            imported++;
+          }
+        }
+        continue;
+      }
 
       // Find matching fiction
       let myFiction = null;
@@ -1570,17 +1653,46 @@ async function runImport(workbookData) {
           }
           const rrFictionId = match[1];
 
-          // Parse code for basic info
-          let parsedInfo = { fictionId: rrFictionId };
+          // Trust the row first — Fiction / Author / Fiction URL came out
+          // of our own export and are usually correct. Only hit the network
+          // when the row is missing essentials, and even then only fill in
+          // blanks (don't overwrite what the user had in their file).
+          let parsedInfo = {
+            fictionId: rrFictionId,
+            fictionTitle: (row['Fiction'] || '').toString().trim(),
+            fictionUrl: (row['Fiction URL'] || '').toString().trim(),
+            authorName: (row['Author'] || '').toString().trim(),
+            coverUrl: (row['Cover URL'] || '').toString().trim(),
+            profileUrl: (row['Profile URL'] || '').toString().trim(),
+            authorAvatar: (row['Avatar URL'] || '').toString().trim(),
+          };
 
-          // Try to fetch fiction details
-          try {
-            const details = await fetchFictionDetails(rrFictionId);
-            if (details) {
-              parsedInfo = { ...parsedInfo, ...details };
+          // If the Contacts sheet was imported earlier in this run we may
+          // already have author-level URLs cached — use them so we don't
+          // need to fetch.
+          if (parsedInfo.authorName) {
+            const cached = contactCache.get(parsedInfo.authorName);
+            if (cached) {
+              if (!parsedInfo.profileUrl && cached.profileUrl) parsedInfo.profileUrl = cached.profileUrl;
+              if (!parsedInfo.authorAvatar && cached.authorAvatar) parsedInfo.authorAvatar = cached.authorAvatar;
             }
-          } catch (fetchErr) {
-            console.log('[RR Companion BG] Could not fetch details for', rrFictionId);
+          }
+
+          // Fetch when any essential is missing — title, author, OR cover.
+          // Pre-Cover-URL exports have empty coverUrl, so this still triggers
+          // a one-time enrichment instead of leaving the calendar with letter
+          // placeholders.
+          if (!parsedInfo.fictionTitle || !parsedInfo.authorName || !parsedInfo.coverUrl) {
+            try {
+              const details = await fetchFictionDetails(rrFictionId);
+              if (details) {
+                for (const [k, v] of Object.entries(details)) {
+                  if (v && !parsedInfo[k]) parsedInfo[k] = v;
+                }
+              }
+            } catch (fetchErr) {
+              console.log('[RR Companion BG] Could not fetch details for', rrFictionId);
+            }
           }
 
           // Create/update contact
@@ -1660,15 +1772,16 @@ async function runImport(workbookData) {
             continue;
           }
 
-          // Create new shoutout
+          // Create new shoutout — parsedInfo already merged row + fetched
+          // (when needed), so just spread it in.
           const newShoutout = {
             code: code,
             schedules: newSchedule ? [newSchedule] : [],
             fictionId: rrFictionId,
-            fictionTitle: parsedInfo.fictionTitle || row['Fiction'] || '',
-            fictionUrl: parsedInfo.fictionUrl || row['Fiction URL'] || '',
+            fictionTitle: parsedInfo.fictionTitle || '',
+            fictionUrl: parsedInfo.fictionUrl || '',
             coverUrl: parsedInfo.coverUrl || '',
-            authorName: parsedInfo.authorName || row['Author'] || '',
+            authorName: parsedInfo.authorName || '',
             authorAvatar: parsedInfo.authorAvatar || '',
             profileUrl: parsedInfo.profileUrl || '',
             expectedReturnDate: row['Expected Return'] || '',

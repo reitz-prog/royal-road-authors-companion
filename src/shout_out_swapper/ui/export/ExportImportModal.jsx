@@ -19,6 +19,7 @@ export function ExportImportModal({ isOpen, onClose, onComplete, currentFictionI
   const [progress, setProgress] = useState(null);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState('excel');
   const fileInputRef = useRef(null);
   const csvInputRef = useRef(null);
   const [myFictions, setMyFictions] = useState([]);
@@ -243,126 +244,155 @@ export function ExportImportModal({ isOpen, onClose, onComplete, currentFictionI
       isOpen={isOpen}
       onClose={handleClose}
       title="Export / Import"
-      className="rr-modal-medium"
+      className="rr-modal-export-import"
     >
-      <div class="rr-export-import-content">
-        {/* Export Section */}
-        <div class="rr-export-section">
-          <h5>Export to Excel</h5>
-          <p class="text-muted">
-            Download all your scheduled shoutouts as an Excel file. Each of your fictions will be a separate sheet.
-          </p>
+      <div class="rr-export-import-layout">
+        <nav class="rr-export-import-tabs">
           <button
-            class="btn btn-primary"
-            onClick={handleExport}
-            disabled={exporting || importing}
+            class={`rr-export-import-tab ${activeTab === 'excel' ? 'active' : ''}`}
+            onClick={() => setActiveTab('excel')}
           >
-            {exporting ? (
-              <><i class="fa fa-spinner fa-spin"></i> Exporting...</>
-            ) : (
-              <><i class="fa fa-download"></i> Export</>
-            )}
+            Excel
           </button>
-        </div>
-
-        <hr />
-
-        {/* Import from Excel */}
-        <div class="rr-import-section">
-          <h5>Import from Excel</h5>
-          <p class="text-muted">
-            Import shoutouts from an <code>.xlsx</code> / <code>.xls</code> workbook.
-            Sheet names should match your fiction titles — that's how rows are
-            attributed to a fiction. Only the <strong>Date</strong> and
-            <strong>Code</strong> columns are required.
-          </p>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx,.xls"
-            style={{ display: 'none' }}
-            onChange={handleFileSelect}
-          />
           <button
-            class="btn btn-secondary"
-            onClick={handleImportClick}
-            disabled={exporting || importing}
+            class={`rr-export-import-tab ${activeTab === 'csv' ? 'active' : ''}`}
+            onClick={() => setActiveTab('csv')}
           >
-            {importing ? (
-              <><i class="fa fa-spinner fa-spin"></i> Importing...</>
-            ) : (
-              <><i class="fa fa-file-excel-o"></i> Import Excel</>
-            )}
+            CSV
           </button>
-        </div>
-
-        <hr />
-
-        {/* Import from CSV */}
-        <div class="rr-import-section">
-          <h5>Import from CSV</h5>
-          <p class="text-muted">
-            Import shoutouts from a single <code>.csv</code> file. Required columns:
-            <strong> Date</strong> and <strong>Code</strong>. Pick which fiction the
-            rows should be attributed to (CSV files have no sheet name, so this is
-            how we know where to put them).
-          </p>
-          <div class="rr-csv-target-row">
-            <label class="rr-csv-target-label" for="rr-csv-target">Attribute rows to:</label>
-            <ThemedSelect
-              id="rr-csv-target"
-              size="sm"
-              value={csvTargetFictionId}
-              onChange={(e) => setCsvTargetFictionId(e.target.value)}
+          {writersGuildEnabled && (
+            <button
+              class={`rr-export-import-tab ${activeTab === 'guild' ? 'active' : ''}`}
+              onClick={() => setActiveTab('guild')}
             >
-              <option value="">Unscheduled (no fiction)</option>
-              {myFictions.map(f => (
-                <option key={f.fictionId} value={String(f.fictionId)}>
-                  {f.title || `Fiction ${f.fictionId}`}
-                </option>
-              ))}
-            </ThemedSelect>
-          </div>
-          <input
-            ref={csvInputRef}
-            type="file"
-            accept=".csv"
-            style={{ display: 'none' }}
-            onChange={handleCsvSelect}
-          />
-          <button
-            class="btn btn-secondary"
-            onClick={handleCsvImportClick}
-            disabled={exporting || importing}
-          >
-            {importing ? (
-              <><i class="fa fa-spinner fa-spin"></i> Importing...</>
-            ) : (
-              <><i class="fa fa-file-text-o"></i> Import CSV</>
-            )}
-          </button>
-        </div>
+              Writers Guild
+            </button>
+          )}
+        </nav>
 
-        {/* Shared progress bar for whichever importer is running */}
-        {progress && (
-          <div class="rr-import-progress mt-3">
-            <div class="progress">
-              <div
-                class="progress-bar"
-                style={{ width: `${Math.round((progress.current / progress.total) * 100)}%` }}
+        <div class="rr-export-import-content">
+          {activeTab === 'excel' && (
+            <>
+              <div class="rr-export-section">
+                <h5>Export to Excel</h5>
+                <p class="text-muted">
+                  Download everything as an <code>.xlsx</code>: one sheet per fiction
+                  for scheduled shoutouts, plus <strong>My Codes</strong> and
+                  <strong> Contacts</strong> sheets so the whole library is portable.
+                </p>
+                <button
+                  class="btn btn-primary"
+                  onClick={handleExport}
+                  disabled={exporting || importing}
+                >
+                  {exporting ? (
+                    <><i class="fa fa-spinner fa-spin"></i> Exporting...</>
+                  ) : (
+                    <><i class="fa fa-download"></i> Export</>
+                  )}
+                </button>
+              </div>
+
+              <hr />
+
+              <div class="rr-import-section">
+                <h5>Import from Excel</h5>
+                <p class="text-muted">
+                  Import an <code>.xlsx</code> / <code>.xls</code> workbook. Sheet
+                  names matching your fiction titles attribute their rows to that
+                  fiction; sheets named <strong>My Codes</strong> and
+                  <strong> Contacts</strong> are imported into those stores. Only{' '}
+                  <strong>Code</strong> is required for shoutouts (and{' '}
+                  <strong>My Codes</strong>); only <strong>Author</strong> for{' '}
+                  <strong>Contacts</strong>.
+                </p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  style={{ display: 'none' }}
+                  onChange={handleFileSelect}
+                />
+                <button
+                  class="btn btn-secondary"
+                  onClick={handleImportClick}
+                  disabled={exporting || importing}
+                >
+                  {importing ? (
+                    <><i class="fa fa-spinner fa-spin"></i> Importing...</>
+                  ) : (
+                    <><i class="fa fa-file-excel-o"></i> Import Excel</>
+                  )}
+                </button>
+              </div>
+
+              <hr />
+
+              <div class="rr-template-section">
+                <h5>Empty template</h5>
+                <p class="text-muted">
+                  Download a blank <code>.xlsx</code> with one sheet per fiction
+                  (just <strong>Date</strong> and <strong>Code</strong>) plus empty
+                  <strong> My Codes</strong> and <strong>Contacts</strong> sheets.
+                  Fill it in, then import above.
+                </p>
+                <button
+                  class="btn btn-outline-primary"
+                  onClick={handleDownloadTemplate}
+                  disabled={exporting || importing}
+                >
+                  <i class="fa fa-file-excel-o"></i> Download empty template
+                </button>
+              </div>
+            </>
+          )}
+
+          {activeTab === 'csv' && (
+            <div class="rr-import-section">
+              <h5>Import from CSV</h5>
+              <p class="text-muted">
+                Import a single <code>.csv</code> file. Required columns:{' '}
+                <strong>Date</strong> and <strong>Code</strong>. CSVs have no sheet
+                name, so pick which fiction the rows should be attributed to.
+              </p>
+              <div class="rr-csv-target-row">
+                <label class="rr-csv-target-label" for="rr-csv-target">Attribute rows to:</label>
+                <ThemedSelect
+                  id="rr-csv-target"
+                  size="sm"
+                  value={csvTargetFictionId}
+                  onChange={(e) => setCsvTargetFictionId(e.target.value)}
+                >
+                  <option value="">Unscheduled (no fiction)</option>
+                  {myFictions.map(f => (
+                    <option key={f.fictionId} value={String(f.fictionId)}>
+                      {f.title || `Fiction ${f.fictionId}`}
+                    </option>
+                  ))}
+                </ThemedSelect>
+              </div>
+              <input
+                ref={csvInputRef}
+                type="file"
+                accept=".csv"
+                style={{ display: 'none' }}
+                onChange={handleCsvSelect}
               />
+              <button
+                class="btn btn-secondary"
+                onClick={handleCsvImportClick}
+                disabled={exporting || importing}
+              >
+                {importing ? (
+                  <><i class="fa fa-spinner fa-spin"></i> Importing...</>
+                ) : (
+                  <><i class="fa fa-file-text-o"></i> Import CSV</>
+                )}
+              </button>
             </div>
-            <small class="text-muted">
-              {progress.current} / {progress.total} rows processed
-              ({progress.imported} imported, {progress.duplicates} duplicates, {progress.skipped} skipped)
-            </small>
-          </div>
-        )}
+          )}
 
-        {/* Writers Guild Section */}
-        {writersGuildEnabled && (
-          <>
-            <hr />
+          {activeTab === 'guild' && writersGuildEnabled && (
             <div class="rr-import-section">
               <h5>Import from Writers Guild</h5>
               <p class="text-muted">
@@ -404,52 +434,48 @@ export function ExportImportModal({ isOpen, onClose, onComplete, currentFictionI
                 </div>
               )}
             </div>
-          </>
-        )}
+          )}
 
-        <hr />
-
-        {/* Empty template - sits at the bottom as a helper for newcomers */}
-        <div class="rr-template-section">
-          <h5>Empty template</h5>
-          <p class="text-muted">
-            Download a blank <code>.xlsx</code> with one sheet per fiction and just
-            the two columns you need (Date and Code). Fill it in, then import above.
-          </p>
-          <button
-            class="btn btn-primary"
-            onClick={handleDownloadTemplate}
-            disabled={exporting || importing}
-          >
-            <i class="fa fa-file-excel-o"></i> Download empty template
-          </button>
-        </div>
-
-        {/* Result */}
-        {result && (
-          <div class={`alert alert-success mt-3`}>
-            <strong>{result.message}</strong>
-            {result.details && (
-              <div class="mt-2">
-                <small>
-                  {result.details.imported} imported,
-                  {result.details.duplicates} duplicates,
-                  {result.details.skipped} skipped
-                  {result.details.errors?.length > 0 && (
-                    <>, {result.details.errors.length} errors</>
-                  )}
-                </small>
+          {/* Shared progress bar for whichever importer is running */}
+          {progress && (
+            <div class="rr-import-progress mt-3">
+              <div class="progress">
+                <div
+                  class="progress-bar"
+                  style={{ width: `${Math.round((progress.current / progress.total) * 100)}%` }}
+                />
               </div>
-            )}
-          </div>
-        )}
+              <small class="text-muted">
+                {progress.current} / {progress.total} rows processed
+                ({progress.imported} imported, {progress.duplicates} duplicates, {progress.skipped} skipped)
+              </small>
+            </div>
+          )}
 
-        {/* Error */}
-        {error && (
-          <div class="alert alert-danger mt-3">
-            {error}
-          </div>
-        )}
+          {result && (
+            <div class={`alert alert-success mt-3`}>
+              <strong>{result.message}</strong>
+              {result.details && (
+                <div class="mt-2">
+                  <small>
+                    {result.details.imported} imported,
+                    {result.details.duplicates} duplicates,
+                    {result.details.skipped} skipped
+                    {result.details.errors?.length > 0 && (
+                      <>, {result.details.errors.length} errors</>
+                    )}
+                  </small>
+                </div>
+              )}
+            </div>
+          )}
+
+          {error && (
+            <div class="alert alert-danger mt-3">
+              {error}
+            </div>
+          )}
+        </div>
       </div>
     </Modal>
   );
