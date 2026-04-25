@@ -911,21 +911,6 @@ function ExpectedDatePill({ value, onSave }) {
           }}
           autoFocus
         />
-        <button
-          type="button"
-          class="rr-expected-pill-btn"
-          onMouseDown={(e) => {
-            // Stop the button from stealing focus before we hand it to the
-            // input — without this, Chrome opens the picker then immediately
-            // closes it because focus snaps back to the button.
-            e.preventDefault();
-            openPicker(e);
-          }}
-          title="Open calendar"
-          aria-label="Open calendar"
-        >
-          <i class="fa fa-calendar"></i>
-        </button>
         <button type="button" class="rr-expected-pill-btn rr-expected-pill-confirm" onClick={handleConfirm} title="Save">
           <i class="fa fa-check"></i>
         </button>

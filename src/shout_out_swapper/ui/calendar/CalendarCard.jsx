@@ -13,9 +13,10 @@ function handleDragStart(e, shoutout, sourceDate) {
 
 // Get swap status icon class
 // States:
-// SWAPPED = Us AND Them (both posted) - green retweet
+// SWAPPED  = Us AND Them (both posted) - green retweet
+// PENDING  = expected swap date set + not yet reached (we hold off scanning) - purple hourglass-start
 // NOT FOUND = Us NOT Them AND scanned (we posted, scanned, they didn't) - red X
-// SHOUTED = Them NOT Us (they posted, we didn't) - cyan message
+// SHOUTED  = Them NOT Us (they posted, we didn't) - cyan message
 // SCHEDULED = NOT Us AND NOT Them (neither posted) - orange clock
 // NOT SCANNED = Us posted but not scanned yet - grey hourglass
 function getSwapIconClass(shoutout, isChecking = false) {
@@ -26,28 +27,34 @@ function getSwapIconClass(shoutout, isChecking = false) {
   const wePosted = shoutout.schedules?.some(s => s.chapter);
   const theyPosted = !!shoutout.swappedDate;
   const hasScanned = !!shoutout.lastSwapScanDate;
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const anyPending = (shoutout.schedules || []).some(
+    s => s.expectedSwapDate && !s.swappedDate && todayStr < s.expectedSwapDate,
+  );
 
-  // SWAPPED = Us AND Them
+  // SWAPPED takes priority — done is done.
   if (wePosted && theyPosted) {
     return { class: 'rr-swap-icon-swapped', icon: 'fa-retweet', title: 'Swapped!' };
   }
 
-  // NOT FOUND = Us NOT Them AND scanned
+  // PENDING — user set an expected date and we're waiting. Beats NOT FOUND
+  // / NOT SCANNED / SCHEDULED so the card clearly shows "we're holding off".
+  if (anyPending) {
+    return { class: 'rr-swap-icon-pending', icon: 'fa-hourglass-start', title: 'Pending — expected date not yet reached' };
+  }
+
   if (wePosted && !theyPosted && hasScanned) {
     return { class: 'rr-swap-icon-notfound', icon: 'fa-times', title: 'Not found - they haven\'t shouted you' };
   }
 
-  // NOT SCANNED = Us posted but not scanned yet
   if (wePosted && !theyPosted && !hasScanned) {
     return { class: 'rr-swap-icon-notscanned', icon: 'fa-hourglass-half', title: 'Not scanned yet' };
   }
 
-  // SHOUTED = Them NOT Us
   if (theyPosted) {
     return { class: 'rr-swap-icon-shouted', icon: 'fa-comment', title: 'They shouted you!' };
   }
 
-  // SCHEDULED = neither posted
   return { class: 'rr-swap-icon-scheduled', icon: 'fa-clock', title: 'Scheduled' };
 }
 

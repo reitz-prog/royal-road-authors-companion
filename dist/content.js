@@ -871,8 +871,15 @@
     const wePosted = shoutout.schedules?.some((s4) => s4.chapter);
     const theyPosted = !!shoutout.swappedDate;
     const hasScanned = !!shoutout.lastSwapScanDate;
+    const todayStr = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const anyPending = (shoutout.schedules || []).some(
+      (s4) => s4.expectedSwapDate && !s4.swappedDate && todayStr < s4.expectedSwapDate
+    );
     if (wePosted && theyPosted) {
       return { class: "rr-swap-icon-swapped", icon: "fa-retweet", title: "Swapped!" };
+    }
+    if (anyPending) {
+      return { class: "rr-swap-icon-pending", icon: "fa-hourglass-start", title: "Pending \u2014 expected date not yet reached" };
     }
     if (wePosted && !theyPosted && hasScanned) {
       return { class: "rr-swap-icon-notfound", icon: "fa-times", title: "Not found - they haven't shouted you" };
@@ -38567,20 +38574,6 @@
             autoFocus: true
           }
         ),
-        /* @__PURE__ */ u4(
-          "button",
-          {
-            type: "button",
-            class: "rr-expected-pill-btn",
-            onMouseDown: (e4) => {
-              e4.preventDefault();
-              openPicker(e4);
-            },
-            title: "Open calendar",
-            "aria-label": "Open calendar",
-            children: /* @__PURE__ */ u4("i", { class: "fa fa-calendar" })
-          }
-        ),
         /* @__PURE__ */ u4("button", { type: "button", class: "rr-expected-pill-btn rr-expected-pill-confirm", onClick: handleConfirm, title: "Save", children: /* @__PURE__ */ u4("i", { class: "fa fa-check" }) }),
         !!value && /* @__PURE__ */ u4("button", { type: "button", class: "rr-expected-pill-btn", onClick: handleCancel, title: "Cancel", children: /* @__PURE__ */ u4("i", { class: "fa fa-times" }) })
       ] });
@@ -43786,6 +43779,12 @@
   color: #e67e22;
 }
 
+/* Pending \u2014 expected swap date set, not yet reached. Purple matches the
+   pill in the modal/list views. */
+.rr-swap-icon-pending {
+  color: #b19cd9;
+}
+
 /* They shouted us first - speech bubble */
 .rr-swap-icon-shouted {
   color: #17a2b8;
@@ -44852,15 +44851,19 @@
   color-scheme: dark;
 }
 
-/* Don't use display:none on the indicator \u2014 Chrome silently disables
-   showPicker() if the indicator is fully hidden. Make it invisible but
-   still part of the layout so the API works. Our custom calendar button
-   sits next to the input as the visible affordance. */
+/* Native picker indicator \u2014 let Chrome render it and trigger the picker on
+   click. color-scheme: dark on the input flips it white-on-dark to fit the
+   pill. We just tighten spacing so it doesn't push the pill wider. */
 .rr-expected-pill-input::-webkit-calendar-picker-indicator {
-  opacity: 0;
-  width: 0;
-  margin: 0;
+  cursor: pointer;
+  margin-left: 0.2rem;
   padding: 0;
+  opacity: 0.85;
+  filter: invert(0.9) brightness(1.1);
+}
+
+.rr-expected-pill-input::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
 }
 
 .rr-expected-pill-btn {

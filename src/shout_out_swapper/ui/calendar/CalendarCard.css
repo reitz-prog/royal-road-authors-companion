@@ -172,6 +172,12 @@
   color: #e67e22;
 }
 
+/* Pending — expected swap date set, not yet reached. Purple matches the
+   pill in the modal/list views. */
+.rr-swap-icon-pending {
+  color: #b19cd9;
+}
+
 /* They shouted us first - speech bubble */
 .rr-swap-icon-shouted {
   color: #17a2b8;
