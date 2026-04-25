@@ -34,17 +34,16 @@
   max-width: 1100px;
 }
 
-/* Settings: wider than small, with its body constrained so long option
-   lists scroll instead of overflowing the viewport. */
+/* Settings: fixed width and height so the modal doesn't reflow when the
+   active tab changes content length. The body itself doesn't scroll — the
+   tab content pane (.rr-settings-form) handles its own overflow. */
 .rr-modal-settings {
-  width: 95%;
-  max-width: 600px;
-  max-height: 85vh;
+  width: 600px;
+  max-width: calc(100vw - 2rem);
 }
 
 .rr-modal-settings .rr-modal-body {
-  max-height: calc(85vh - 8rem); /* leave room for header + footer */
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 /* Header */

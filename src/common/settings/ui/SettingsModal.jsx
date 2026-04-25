@@ -1,6 +1,6 @@
 // Settings modal component
 import { h } from 'preact';
-import { useState } from 'preact/hooks';
+import { useState, useEffect, useCallback } from 'preact/hooks';
 import { Modal } from '../../ui/modal/Modal.jsx';
 import { DangerConfirmDialog } from '../../ui/dialog/Dialog.jsx';
 import { Select, Radio, Button } from '../../ui/components/index.jsx';
@@ -9,6 +9,13 @@ import { log } from '../../logging/core.js';
 import * as db from '../../db/proxy.js';
 
 const logger = log.scope('settings');
+
+function formatBytes(bytes) {
+  if (bytes == null || isNaN(bytes)) return '—';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+}
 
 const TIMEZONE_OPTIONS = [
   { value: 'UTC', label: 'UTC (GMT+0)' },
@@ -34,6 +41,43 @@ export function SettingsModal({ isOpen, onClose, onClearAll }) {
   const [writersGuildEnabled, setWritersGuildEnabled] = useState(settings.writersGuildEnabled || false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showDeleteDbConfirm, setShowDeleteDbConfirm] = useState(false);
+  const [storageUsage, setStorageUsage] = useState(null);
+  const [activeTab, setActiveTab] = useState('general');
+
+  // Fetch storage usage stats (chrome.storage.local total + per-key, plus
+  // IndexedDB approx via navigator.storage.estimate which reports across the
+  // whole extension origin — close enough for "how much disk does this use").
+  const refreshStorageUsage = useCallback(async () => {
+    try {
+      if (typeof chrome === 'undefined' || !chrome.storage?.local?.getBytesInUse) return;
+
+      const total = await chrome.storage.local.getBytesInUse(null);
+      const quota = chrome.storage.local.QUOTA_BYTES;
+      const trackedKeys = ['rrLogs', 'scanState', 'importState', 'swapCheckState', 'checkAllSwapsState'];
+      const byKey = {};
+      await Promise.all(
+        trackedKeys.map(async (k) => {
+          byKey[k] = await chrome.storage.local.getBytesInUse(k);
+        })
+      );
+
+      let estimate = null;
+      try {
+        if (navigator.storage?.estimate) {
+          estimate = await navigator.storage.estimate();
+        }
+      } catch (e) { /* ignore */ }
+
+      setStorageUsage({ total, quota, byKey, estimate });
+    } catch (err) {
+      logger.warn('Failed to read storage usage', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    refreshStorageUsage();
+  }, [isOpen, refreshStorageUsage]);
 
   const handleSave = () => {
     saveSettings({ placement, timezone, writersGuildEnabled });
@@ -111,84 +155,180 @@ export function SettingsModal({ isOpen, onClose, onClearAll }) {
         className="rr-modal-settings"
         footer={footer}
       >
-        <div class="rr-settings-form">
-          <div class="rr-settings-group">
-            <div class="rr-settings-label">Shoutout Placement</div>
-            <div class="rr-settings-options">
-              <label class="rr-settings-radio">
-                <input
-                  type="radio"
-                  name="placement"
-                  value="pre"
-                  checked={placement === 'pre'}
-                  onChange={() => setPlacement('pre')}
-                />
-                <span>Pre-chapter Author's Note</span>
-              </label>
-              <label class="rr-settings-radio">
-                <input
-                  type="radio"
-                  name="placement"
-                  value="post"
-                  checked={placement === 'post'}
-                  onChange={() => setPlacement('post')}
-                />
-                <span>Post-chapter Author's Note</span>
-              </label>
-            </div>
-          </div>
-
-          <div class="rr-settings-group">
-            <div class="rr-settings-label">Timezone</div>
-            <p class="rr-settings-description">
-              Used for displaying dates in analytics and calendar.
-            </p>
-            <Select
-              value={timezone}
-              onChange={(e) => setTimezone(e.target.value)}
+        <div class="rr-settings-layout">
+          <nav class="rr-settings-tabs">
+            <button
+              class={`rr-settings-tab ${activeTab === 'general' ? 'active' : ''}`}
+              onClick={() => setActiveTab('general')}
             >
-              <optgroup label="Common Timezones">
-                {TIMEZONE_OPTIONS.map(tz => (
-                  <option key={tz.value} value={tz.value}>{tz.label}</option>
-                ))}
-              </optgroup>
-              <optgroup label="Your Timezone">
-                <option value={Intl.DateTimeFormat().resolvedOptions().timeZone}>
-                  {Intl.DateTimeFormat().resolvedOptions().timeZone} (Local)
-                </option>
-              </optgroup>
-            </Select>
-          </div>
+              General
+            </button>
+            <button
+              class={`rr-settings-tab ${activeTab === 'integrations' ? 'active' : ''}`}
+              onClick={() => setActiveTab('integrations')}
+            >
+              Integrations
+            </button>
+            <button
+              class={`rr-settings-tab ${activeTab === 'storage' ? 'active' : ''}`}
+              onClick={() => setActiveTab('storage')}
+            >
+              Storage &amp; Logs
+            </button>
+            <button
+              class={`rr-settings-tab rr-settings-tab-danger ${activeTab === 'danger' ? 'active' : ''}`}
+              onClick={() => setActiveTab('danger')}
+            >
+              Danger Zone
+            </button>
+          </nav>
 
-          <div class="rr-settings-group">
-            <label class="rr-settings-label rr-settings-label-disabled">
-              <input type="checkbox" disabled />
-              <span>Notify author on swap</span>
-              <span class="rr-settings-badge">Coming Soon</span>
-            </label>
-            <p class="rr-settings-description">
-              Automatically notify the other author via Discord when a swap is completed.
-            </p>
-          </div>
+          <div class="rr-settings-form">
+          {activeTab === 'general' && (
+            <>
+              <div class="rr-settings-group">
+                <div class="rr-settings-label">Shoutout Placement</div>
+                <div class="rr-settings-options">
+                  <label class="rr-settings-radio">
+                    <input
+                      type="radio"
+                      name="placement"
+                      value="pre"
+                      checked={placement === 'pre'}
+                      onChange={() => setPlacement('pre')}
+                    />
+                    <span>Pre-chapter Author's Note</span>
+                  </label>
+                  <label class="rr-settings-radio">
+                    <input
+                      type="radio"
+                      name="placement"
+                      value="post"
+                      checked={placement === 'post'}
+                      onChange={() => setPlacement('post')}
+                    />
+                    <span>Post-chapter Author's Note</span>
+                  </label>
+                </div>
+              </div>
 
-          <div class="rr-settings-group">
-            <label class="rr-settings-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={writersGuildEnabled}
-                onChange={(e) => setWritersGuildEnabled(e.target.checked)}
-              />
-              <span>Enable Writers Guild Integration</span>
-            </label>
+              <div class="rr-settings-group">
+                <div class="rr-settings-label">Timezone</div>
+                <p class="rr-settings-description">
+                  Used for displaying dates in analytics and calendar.
+                </p>
+                <Select
+                  value={timezone}
+                  onChange={(e) => setTimezone(e.target.value)}
+                >
+                  <optgroup label="Common Timezones">
+                    {TIMEZONE_OPTIONS.map(tz => (
+                      <option key={tz.value} value={tz.value}>{tz.label}</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Your Timezone">
+                    <option value={Intl.DateTimeFormat().resolvedOptions().timeZone}>
+                      {Intl.DateTimeFormat().resolvedOptions().timeZone} (Local)
+                    </option>
+                  </optgroup>
+                </Select>
+              </div>
+            </>
+          )}
+
+          {activeTab === 'integrations' && (
+            <>
+              <div class="rr-settings-group">
+                <label class="rr-settings-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={writersGuildEnabled}
+                    onChange={(e) => setWritersGuildEnabled(e.target.checked)}
+                  />
+                  <span>Enable Writers Guild Integration</span>
+                </label>
+                <p class="rr-settings-description">
+                  Import shoutouts from rrwritersguild.com/shoutouts/dashboard
+                </p>
+              </div>
+
+              <div class="rr-settings-group">
+                <label class="rr-settings-label rr-settings-label-disabled">
+                  <input type="checkbox" disabled />
+                  <span>Notify author on swap</span>
+                  <span class="rr-settings-badge">Coming Soon</span>
+                </label>
+                <p class="rr-settings-description">
+                  Automatically notify the other author via Discord when a swap is completed.
+                </p>
+              </div>
+            </>
+          )}
+
+          {activeTab === 'storage' && (
+            <>
+              <div class="rr-settings-group">
+                <div class="rr-settings-label">Storage usage</div>
             <p class="rr-settings-description">
-              Import shoutouts from rrwritersguild.com/shoutouts/dashboard
+              How much of the extension's quota is used. Logs are by far the biggest consumer.
             </p>
+            {storageUsage ? (
+              <div class="rr-storage-usage">
+                <div class="rr-storage-total">
+                  <strong>{formatBytes(storageUsage.total)}</strong>
+                  {storageUsage.quota ? <> / {formatBytes(storageUsage.quota)}</> : null}
+                  {storageUsage.quota ? (
+                    <span class="rr-storage-pct">
+                      {' '}({Math.round((storageUsage.total / storageUsage.quota) * 100)}%)
+                    </span>
+                  ) : null}
+                </div>
+                {storageUsage.quota ? (
+                  <div class="rr-storage-bar">
+                    <div
+                      class="rr-storage-bar-fill"
+                      style={{ width: `${Math.min(100, (storageUsage.total / storageUsage.quota) * 100)}%` }}
+                    />
+                  </div>
+                ) : null}
+                <ul class="rr-storage-breakdown">
+                  {Object.entries(storageUsage.byKey)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([key, bytes]) => (
+                      <li key={key}>
+                        <span class="rr-storage-key">{key}</span>
+                        <span class="rr-storage-bytes">{formatBytes(bytes)}</span>
+                      </li>
+                    ))}
+                </ul>
+                {storageUsage.estimate?.usage != null && (
+                  <p class="rr-settings-description" style={{ marginTop: '0.5rem' }}>
+                    Total disk (incl. IndexedDB):{' '}
+                    <strong>{formatBytes(storageUsage.estimate.usage)}</strong>
+                    {storageUsage.estimate.quota ? <> / {formatBytes(storageUsage.estimate.quota)}</> : null}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p class="rr-settings-description">Loading…</p>
+            )}
+            <button
+              class="btn btn-sm btn-outline-warning"
+              style={{ marginTop: '0.5rem' }}
+              onClick={async () => {
+                await log.clearLogs();
+                logger.info('Logs cleared');
+                refreshStorageUsage();
+              }}
+            >
+              Clear logs
+            </button>
           </div>
 
           <div class="rr-settings-group">
             <div class="rr-settings-label">Debug</div>
             <p class="rr-settings-description">
-              Download or clear logs for troubleshooting.
+              Download logs for troubleshooting.
             </p>
             <button
               class="btn btn-sm btn-outline-secondary"
@@ -197,37 +337,32 @@ export function SettingsModal({ isOpen, onClose, onClearAll }) {
             >
               Download Logs
             </button>
-            <button
-              class="btn btn-sm btn-outline-secondary"
-              style={{ marginTop: '0.5rem', marginLeft: '0.5rem' }}
-              onClick={async () => {
-                await log.clearLogs();
-                logger.info('Logs cleared');
-              }}
-            >
-              Clear Logs
-            </button>
           </div>
+            </>
+          )}
 
-          <div class="rr-settings-group rr-settings-danger">
-            <div class="rr-settings-label">Danger Zone</div>
-            <p class="rr-settings-description">
-              Clear all data including contacts, shoutouts, and archives. Cannot be undone.
-            </p>
-            <button
-              class="btn btn-sm btn-outline-danger"
-              style={{ marginTop: '0.5rem' }}
-              onClick={() => setShowClearConfirm(true)}
-            >
-              Clear All Data
-            </button>
-            <button
-              class="btn btn-sm btn-outline-danger"
-              style={{ marginTop: '0.5rem', marginLeft: '0.5rem' }}
-              onClick={() => setShowDeleteDbConfirm(true)}
-            >
-              Delete Database
-            </button>
+          {activeTab === 'danger' && (
+            <div class="rr-settings-group rr-settings-danger">
+              <div class="rr-settings-label">Danger Zone</div>
+              <p class="rr-settings-description">
+                Clear all data including contacts, shoutouts, and archives. Cannot be undone.
+              </p>
+              <button
+                class="btn btn-sm btn-outline-danger"
+                style={{ marginTop: '0.5rem' }}
+                onClick={() => setShowClearConfirm(true)}
+              >
+                Clear All Data
+              </button>
+              <button
+                class="btn btn-sm btn-outline-danger"
+                style={{ marginTop: '0.5rem', marginLeft: '0.5rem' }}
+                onClick={() => setShowDeleteDbConfirm(true)}
+              >
+                Delete Database
+              </button>
+            </div>
+          )}
           </div>
         </div>
       </Modal>

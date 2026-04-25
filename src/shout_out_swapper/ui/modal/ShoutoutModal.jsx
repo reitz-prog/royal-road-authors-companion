@@ -55,10 +55,18 @@ export function ShoutoutModal({
   shoutout = null,
   mode = 'add',
   myFictions = [],
-  currentFictionId = null
+  currentFictionId = null,
+  contacts = [],
+  onSaveContactDiscord,
+  onSaveScheduleField
 }) {
   const [code, setCode] = useState(shoutout?.code || '');
   const [expectedReturn, setExpectedReturn] = useState(shoutout?.expectedReturnDate || '');
+  // Discord username lives on the contact (keyed by author name) so it's
+  // shared across every shoutout from the same author. Look it up whenever
+  // the modal's effective author name changes; the user can override.
+  const [discordUsername, setDiscordUsername] = useState('');
+  const [notes, setNotes] = useState(shoutout?.notes || '');
   const [authorInfo, setAuthorInfo] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -91,6 +99,9 @@ export function ShoutoutModal({
     const newCode = shoutout?.code || '';
     setCode(newCode);
     setExpectedReturn(shoutout?.expectedReturnDate || '');
+    setNotes(shoutout?.notes || '');
+    // Discord username is filled from the matching contact in a separate
+    // effect so contacts-store updates don't clobber the rest of the modal.
     setShowPreview(false);
     setHideCode(false);
     setLoading(false);
@@ -152,6 +163,24 @@ export function ShoutoutModal({
 
     // Textarea is now controlled via `value={code}`; no manual sync needed.
   }, [isOpen, shoutout, date, currentFictionId, myFictions]);
+
+  // Pull the Discord username from the matching contact whenever the active
+  // author or the contacts data changes. This is the single source of truth —
+  // when the contact is saved (here or elsewhere), this re-fires and the
+  // displayed value updates. Doesn't reset on contacts-only changes thanks
+  // to being in its own effect, so other modal state is untouched.
+  useEffect(() => {
+    if (!isOpen) return;
+    const author = shoutout?.authorName || authorInfo?.authorName;
+    if (!author) return;
+    const contact = contacts.find(c => c.authorName === author);
+    if (contact) {
+      setDiscordUsername(contact.discordUsername || '');
+    } else if (shoutout?.discordUsername) {
+      // Legacy shoutouts (pre-contact-migration) carried it on the shoutout itself.
+      setDiscordUsername(shoutout.discordUsername);
+    }
+  }, [isOpen, shoutout?.id, shoutout?.authorName, authorInfo?.authorName, contacts]);
 
   // Check for ongoing swap check when modal opens (for scans started from calendar)
   useEffect(() => {
@@ -308,11 +337,13 @@ export function ShoutoutModal({
       id: shoutout?.id,
       code: actualCode,
       expectedReturnDate: expectedReturn,
+      discordUsername,
+      notes,
       schedules: schedules,
       ...authorInfo
     });
     onClose();
-  }, [code, expectedReturn, authorInfo, shoutout, schedules, onSave, onClose]);
+  }, [code, expectedReturn, discordUsername, notes, authorInfo, shoutout, schedules, onSave, onClose]);
 
   const handleRemoveSchedule = (index) => {
     setSchedules(prev => prev.filter((_, i) => i !== index));
@@ -531,6 +562,17 @@ export function ShoutoutModal({
                   checkingSwap={checkingSwap}
                   checkProgress={checkProgress}
                   swapResult={swapResult}
+                  mode={mode}
+                  discordUsername={discordUsername}
+                  onDiscordUsernameChange={(next) => {
+                    setDiscordUsername(next);
+                    const author = effectiveAuthorInfo?.authorName || shoutout?.authorName;
+                    if (!author) return;
+                    onSaveContactDiscord?.(author, next);
+                  }}
+                  onSaveScheduleField={(idx, fields) => {
+                    if (shoutout?.id != null) onSaveScheduleField?.(shoutout.id, idx, fields);
+                  }}
                 />
               </div>
             </div>
@@ -696,6 +738,17 @@ export function ShoutoutModal({
                 </div>
               )}
             </div>
+
+            <div class="rr-notes-section">
+              <label class="rr-modal-label">Notes:</label>
+              <textarea
+                class="form-control rr-notes-textarea"
+                placeholder="Notes (optional)"
+                rows="3"
+                value={notes}
+                onInput={(e) => setNotes(e.target.value)}
+              />
+            </div>
           </div>
 
           <div class="rr-modal-author-panel">
@@ -709,6 +762,17 @@ export function ShoutoutModal({
               checkingSwap={checkingSwap}
               checkProgress={checkProgress}
               swapResult={swapResult}
+              mode={mode}
+              discordUsername={discordUsername}
+              onDiscordUsernameChange={(next) => {
+                setDiscordUsername(next);
+                const author = effectiveAuthorInfo?.authorName || shoutout?.authorName;
+                if (!author) return;
+                onSaveContactDiscord?.(author, next);
+              }}
+              onSaveScheduleField={(idx, fields) => {
+                if (shoutout?.id != null) onSaveScheduleField?.(shoutout.id, idx, fields);
+              }}
             />
           </div>
         </div>
@@ -735,9 +799,15 @@ function getSchedulePillState(sched) {
   const theyPosted = !!sched.swappedDate;
   const scanned = !!sched.lastSwapScanDate;
   if (wePosted && theyPosted) return 'SWAPPED';
-  if (wePosted && !theyPosted && scanned) return 'NOT FOUND';
-  if (wePosted && !theyPosted && !scanned) return 'NOT SCANNED';
   if (theyPosted) return 'SHOUTED';
+  // PENDING — user set an expected swap date and we haven't reached it yet.
+  // Beats NOT SCANNED / SCHEDULED so the UI clearly says "we're waiting".
+  if (sched.expectedSwapDate) {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (todayStr < sched.expectedSwapDate) return 'PENDING';
+  }
+  if (wePosted && scanned) return 'NOT FOUND';
+  if (wePosted) return 'NOT SCANNED';
   return 'SCHEDULED';
 }
 
@@ -748,12 +818,14 @@ function SchedulePill({ state, sched }) {
     'NOT SCANNED': 'rr-swap-badge-not-scanned',
     SHOUTED: 'rr-swap-badge-shouted',
     SCHEDULED: 'rr-swap-badge-scheduled',
+    PENDING: 'rr-swap-badge-pending',
   };
   const cls = classByState[state] || 'rr-swap-badge-scheduled';
   const clickable = state === 'SWAPPED' && !!sched.swappedChapterUrl;
   const titleParts = [state];
   if (state === 'SWAPPED' && sched.swappedChapter) titleParts.push(`in "${sched.swappedChapter}"`);
   if (state === 'NOT FOUND' && sched.lastSwapScanDate) titleParts.push(`scanned ${sched.lastSwapScanDate}`);
+  if (state === 'PENDING' && sched.expectedSwapDate) titleParts.push(`expected by ${sched.expectedSwapDate}`);
   const title = titleParts.join(' — ');
 
   if (clickable) {
@@ -773,7 +845,223 @@ function SchedulePill({ state, sched }) {
   return <span class={`rr-swap-pill ${cls}`} title={title}>{state}</span>;
 }
 
-function AuthorInfo({ info, loading, shoutout, schedules = [], myFictions = [], onCheckSwap, checkingSwap, checkProgress, swapResult }) {
+// Per-schedule "expected swap date" pill. Read-only display + edit pencil
+// by default; on edit, swaps to a date input + ✓ confirm + × cancel. Saves
+// inline via the onSave callback so it persists from view mode (archived
+// shoutouts) too.
+function ExpectedDatePill({ value, onSave }) {
+  const [editing, setEditing] = useState(!value);
+  const [draft, setDraft] = useState(value || '');
+  const [saved, setSaved] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    setDraft(value || '');
+    setEditing(!value);
+  }, [value]);
+
+  const openPicker = useCallback((evt) => {
+    const el = inputRef.current;
+    console.log('[ExpectedDatePill] openPicker', {
+      hasEl: !!el,
+      hasShowPicker: typeof el?.showPicker === 'function',
+      isTrusted: evt?.isTrusted,
+    });
+    if (!el) return;
+    try {
+      el.focus();
+      if (typeof el.showPicker === 'function') {
+        el.showPicker();
+      } else {
+        // Fallback: simulate a click on the input itself.
+        el.click();
+      }
+    } catch (e) {
+      console.warn('[ExpectedDatePill] showPicker failed', e);
+    }
+  }, []);
+
+  const handleConfirm = useCallback(() => {
+    const trimmed = (draft || '').trim();
+    onSave?.(trimmed);
+    setEditing(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  }, [draft, onSave]);
+
+  const handleCancel = useCallback(() => {
+    setDraft(value || '');
+    setEditing(!value);
+  }, [value]);
+
+  if (editing) {
+    return (
+      <span class="rr-expected-pill rr-expected-pill-editing">
+        <i class="fa fa-clock-o" aria-hidden="true"></i>
+        <span class="rr-expected-pill-label">Expected:</span>
+        <input
+          ref={inputRef}
+          type="date"
+          class="rr-expected-pill-input"
+          value={draft}
+          onInput={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); handleConfirm(); }
+            if (e.key === 'Escape') { e.preventDefault(); handleCancel(); }
+          }}
+          autoFocus
+        />
+        <button
+          type="button"
+          class="rr-expected-pill-btn"
+          onMouseDown={(e) => {
+            // Stop the button from stealing focus before we hand it to the
+            // input — without this, Chrome opens the picker then immediately
+            // closes it because focus snaps back to the button.
+            e.preventDefault();
+            openPicker(e);
+          }}
+          title="Open calendar"
+          aria-label="Open calendar"
+        >
+          <i class="fa fa-calendar"></i>
+        </button>
+        <button type="button" class="rr-expected-pill-btn rr-expected-pill-confirm" onClick={handleConfirm} title="Save">
+          <i class="fa fa-check"></i>
+        </button>
+        {!!value && (
+          <button type="button" class="rr-expected-pill-btn" onClick={handleCancel} title="Cancel">
+            <i class="fa fa-times"></i>
+          </button>
+        )}
+      </span>
+    );
+  }
+
+  return (
+    <span class="rr-expected-pill" title={`Expected by ${value}`}>
+      <i class="fa fa-clock-o" aria-hidden="true"></i>
+      <span class="rr-expected-pill-label">Expected:</span>
+      <span class="rr-expected-pill-date">{value}</span>
+      {saved && <span class="rr-expected-pill-saved">Saved</span>}
+      <button type="button" class="rr-expected-pill-btn" onClick={() => setEditing(true)} title="Edit expected date">
+        <i class="fa fa-pencil"></i>
+      </button>
+    </span>
+  );
+}
+
+function DiscordBadge({ value, onSave }) {
+  // Self-managed edit toggle: read-only by default (show + copy + edit), or
+  // edit (input + confirm + cancel). Default to edit when there's nothing yet.
+  const [editing, setEditing] = useState(!value);
+  const [draft, setDraft] = useState(value || '');
+  const [copied, setCopied] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  // Sync draft + editing when the source value changes (e.g. switching to a
+  // different shoutout / contact updates externally).
+  useEffect(() => {
+    setDraft(value || '');
+    setEditing(!value);
+  }, [value]);
+
+  const handleCopy = useCallback(async () => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch (e) { /* clipboard blocked */ }
+  }, [value]);
+
+  const handleConfirm = useCallback(() => {
+    const trimmed = (draft || '').trim();
+    console.log('[DiscordBadge] confirm save', { trimmed, hasOnSave: typeof onSave === 'function' });
+    onSave?.(trimmed);
+    setEditing(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  }, [draft, onSave]);
+
+  const handleCancel = useCallback(() => {
+    setDraft(value || '');
+    setEditing(!value);
+  }, [value]);
+
+  return (
+    <div class="rr-discord-row">
+      <span class="rr-discord-row-icon" aria-hidden="true" title="Discord username">
+        {/* Inline SVG so we don't depend on Font Awesome's brands subset. */}
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+          <path d="M19.27 5.33a18.18 18.18 0 0 0-4.55-1.43.07.07 0 0 0-.07.04c-.2.36-.42.83-.57 1.2a16.85 16.85 0 0 0-5.16 0c-.15-.38-.38-.84-.58-1.2a.08.08 0 0 0-.07-.04c-1.6.27-3.13.75-4.55 1.43a.07.07 0 0 0-.03.03C.83 9.61.18 13.78.51 17.9a.08.08 0 0 0 .03.05 18.34 18.34 0 0 0 5.55 2.84.08.08 0 0 0 .08-.03c.43-.59.81-1.21 1.13-1.86a.08.08 0 0 0-.04-.1 12.1 12.1 0 0 1-1.74-.83.08.08 0 0 1 0-.13c.12-.09.24-.18.35-.27a.08.08 0 0 1 .08-.01 13.07 13.07 0 0 0 11.16 0 .08.08 0 0 1 .08.01l.35.27a.08.08 0 0 1 0 .13c-.55.32-1.13.6-1.74.83a.08.08 0 0 0-.04.11c.32.65.71 1.27 1.13 1.85a.08.08 0 0 0 .08.03 18.27 18.27 0 0 0 5.56-2.84.08.08 0 0 0 .03-.05c.39-4.78-.65-8.91-2.76-12.55a.06.06 0 0 0-.03-.03ZM8.02 15.39c-1.1 0-2-1-2-2.24 0-1.23.88-2.24 2-2.24 1.13 0 2.02 1.02 2 2.24 0 1.24-.88 2.24-2 2.24Zm7.39 0c-1.1 0-2-1-2-2.24 0-1.23.88-2.24 2-2.24 1.13 0 2.02 1.02 2 2.24 0 1.24-.87 2.24-2 2.24Z"/>
+        </svg>
+      </span>
+
+      {editing ? (
+        <>
+          <input
+            type="text"
+            class="form-control form-control-sm rr-discord-row-input"
+            placeholder="Discord username"
+            value={draft}
+            onInput={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); handleConfirm(); }
+              if (e.key === 'Escape') { e.preventDefault(); handleCancel(); }
+            }}
+            autoFocus
+          />
+          <button
+            type="button"
+            class="rr-discord-row-btn rr-discord-row-confirm"
+            onClick={handleConfirm}
+            title="Save"
+            aria-label="Save Discord username"
+          >
+            <i class="fa fa-check"></i>
+          </button>
+          {!!value && (
+            <button
+              type="button"
+              class="rr-discord-row-btn"
+              onClick={handleCancel}
+              title="Cancel"
+              aria-label="Cancel"
+            >
+              <i class="fa fa-times"></i>
+            </button>
+          )}
+        </>
+      ) : (
+        <>
+          <span class="rr-discord-row-text">{value}</span>
+          {saved && <span class="rr-discord-row-saved" aria-live="polite">Saved</span>}
+          <button
+            type="button"
+            class="rr-discord-row-btn"
+            onClick={handleCopy}
+            title={copied ? 'Copied' : 'Copy username'}
+            aria-label="Copy Discord username"
+          >
+            <i class={copied ? 'fa fa-check' : 'fa fa-copy'}></i>
+          </button>
+          <button
+            type="button"
+            class="rr-discord-row-btn"
+            onClick={() => setEditing(true)}
+            title="Edit"
+            aria-label="Edit Discord username"
+          >
+            <i class="fa fa-pencil"></i>
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function AuthorInfo({ info, loading, shoutout, schedules = [], myFictions = [], onCheckSwap, checkingSwap, checkProgress, swapResult, mode = 'edit', discordUsername = '', onDiscordUsernameChange, onSaveScheduleField }) {
   if (loading) {
     return <div class="rr-author-empty">Loading...</div>;
   }
@@ -800,6 +1088,11 @@ function AuthorInfo({ info, loading, shoutout, schedules = [], myFictions = [], 
           <>by {info.authorName || 'Unknown'}</>
         )}
       </div>
+      <DiscordBadge
+        value={discordUsername}
+        onSave={onDiscordUsernameChange}
+      />
+
       {info.fictionUrl && (
         <a href={info.fictionUrl} target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary rr-view-fiction-btn">
           View Fiction
@@ -822,6 +1115,12 @@ function AuthorInfo({ info, loading, shoutout, schedules = [], myFictions = [], 
                   {sched.date && <span class="rr-scheduled-date">{sched.date}</span>}
                   {!sched.date && <span class="rr-scheduled-date rr-unscheduled">Unscheduled</span>}
                   {shoutout && <SchedulePill state={state} sched={sched} />}
+                  {shoutout && !(sched.swappedDate && !sched.expectedSwapDate) && (
+                    <ExpectedDatePill
+                      value={sched.expectedSwapDate || ''}
+                      onSave={(next) => onSaveScheduleField?.(idx, { expectedSwapDate: next })}
+                    />
+                  )}
                 </div>
               );
             })}

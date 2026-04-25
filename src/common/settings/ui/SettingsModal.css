@@ -72,3 +72,143 @@
 .rr-settings-danger .rr-settings-description {
   margin-left: 0;
 }
+
+.rr-storage-usage {
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.rr-storage-total {
+  font-size: 1rem;
+}
+
+.rr-storage-pct {
+  color: rgba(128, 128, 128, 0.85);
+  font-weight: 500;
+}
+
+.rr-storage-bar {
+  height: 6px;
+  background: rgba(128, 128, 128, 0.2);
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 0.4rem 0 0.6rem;
+}
+
+.rr-storage-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #28a745 0%, #28a745 70%, #f0ad4e 85%, #d9534f 100%);
+  background-size: 100% 100%;
+  transition: width 0.2s ease;
+}
+
+.rr-storage-breakdown {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+}
+
+.rr-storage-breakdown li {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.15rem 0;
+  border-bottom: 1px dashed rgba(128, 128, 128, 0.15);
+}
+
+.rr-storage-breakdown li:last-child {
+  border-bottom: none;
+}
+
+.rr-storage-key {
+  color: rgba(128, 128, 128, 0.95);
+}
+
+.rr-storage-bytes {
+  color: inherit;
+  font-weight: 600;
+}
+
+/* Vertical tabs on the left, content on the right. The layout itself has a
+   fixed height so the modal doesn't jump when switching between a short tab
+   (e.g. Danger Zone) and a long one (e.g. Storage). The right pane scrolls
+   internally when its content overflows. */
+.rr-settings-layout {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 1rem;
+  align-items: stretch;
+  height: 380px;
+}
+
+.rr-settings-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  border-right: 1px solid rgba(128, 128, 128, 0.2);
+  padding-right: 0.75rem;
+}
+
+.rr-settings-tab {
+  background: transparent;
+  border: none;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.9rem;
+  color: rgba(128, 128, 128, 0.95);
+  cursor: pointer;
+  text-align: left;
+  border-radius: 4px;
+  border-left: 2px solid transparent;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.rr-settings-tab:hover {
+  background: rgba(128, 128, 128, 0.08);
+  color: inherit;
+}
+
+.rr-settings-tab.active {
+  background: rgba(51, 122, 183, 0.12);
+  border-left-color: #337ab7;
+  color: #337ab7;
+}
+
+.rr-settings-tab-danger.active {
+  background: rgba(217, 83, 79, 0.12);
+  border-left-color: #d9534f;
+  color: #d9534f;
+}
+
+/* Right pane fills the layout's fixed height and scrolls when overflowing. */
+.rr-settings-layout .rr-settings-form {
+  overflow-y: auto;
+  height: 100%;
+  min-height: 0;
+  padding-right: 0.25rem;
+}
+
+@media (max-width: 600px) {
+  .rr-settings-layout {
+    grid-template-columns: 1fr;
+  }
+  .rr-settings-tabs {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+    padding-right: 0;
+    padding-bottom: 0.5rem;
+  }
+  .rr-settings-tab {
+    border-left: none;
+    border-bottom: 2px solid transparent;
+  }
+  .rr-settings-tab.active {
+    border-left: none;
+    border-bottom-color: #337ab7;
+  }
+  .rr-settings-tab-danger.active {
+    border-bottom-color: #d9534f;
+  }
+}

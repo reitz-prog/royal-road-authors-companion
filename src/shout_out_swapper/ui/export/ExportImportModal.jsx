@@ -14,6 +14,8 @@ export function ExportImportModal({ isOpen, onClose, onComplete, currentFictionI
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importingGuild, setImportingGuild] = useState(false);
+  const [guildStatus, setGuildStatus] = useState('');
+  const [guildLog, setGuildLog] = useState([]);
   const [progress, setProgress] = useState(null);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
@@ -174,46 +176,59 @@ export function ExportImportModal({ isOpen, onClose, onComplete, currentFictionI
     setImportingGuild(true);
     setError(null);
     setResult(null);
+    setGuildStatus('Starting…');
+    setGuildLog([{ ts: Date.now(), step: 'Starting…' }]);
 
-    // Create hidden iframe to load Writers Guild
-    const iframe = document.createElement('iframe');
-    iframe.src = 'https://rrwritersguild.com/shoutouts/dashboard';
-    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;';
-    document.body.appendChild(iframe);
-
-    // Listen for import result
-    const messageHandler = (message) => {
-      if (message.type === 'guildImportResult') {
-        chrome.runtime.onMessage.removeListener(messageHandler);
-        setImportingGuild(false);
-
-        // Remove iframe
-        iframe.remove();
-
-        if (message.success) {
-          setResult({
-            type: 'guild',
-            message: `Imported ${message.count} shoutouts from Writers Guild`,
-            details: { imported: message.count, duplicates: 0, skipped: 0, errors: [] }
-          });
-          onComplete?.();
-        } else {
-          setError(message.error || 'Import failed');
-        }
-      }
+    const pushLog = (step) => {
+      setGuildStatus(step);
+      setGuildLog((log) => [...log, { ts: Date.now(), step }]);
     };
 
-    chrome.runtime.onMessage.addListener(messageHandler);
-
-    // Timeout after 30 seconds
-    setTimeout(() => {
-      chrome.runtime.onMessage.removeListener(messageHandler);
-      iframe.remove();
-      if (importingGuild) {
-        setImportingGuild(false);
-        setError('Import timed out. Make sure you are logged into Writers Guild.');
+    // Listen for progress events broadcast by background while the import
+    // runs. Background does the API fetch directly (cookies are first-party
+    // for the SW once host_permissions covers the domain).
+    const listener = (message) => {
+      if (message?.type === 'rrwgImportProgress') {
+        pushLog(message.step || '…');
       }
-    }, 30000);
+    };
+    chrome.runtime.onMessage.addListener(listener);
+
+    chrome.runtime.sendMessage({ type: 'importFromWritersGuild' }, (response) => {
+      chrome.runtime.onMessage.removeListener(listener);
+      setImportingGuild(false);
+
+      if (chrome.runtime.lastError) {
+        pushLog(`Error: ${chrome.runtime.lastError.message}`);
+        setError(chrome.runtime.lastError.message);
+        return;
+      }
+
+      if (response?.needsAuth) {
+        pushLog('Not signed in to RRWG — opening sign-in tab.');
+        setError('Not signed in to Writers Guild. A tab is opening — sign in there, then click Import again.');
+        chrome.runtime.sendMessage({ type: 'openTab', url: 'https://rrwritersguild.com/shoutouts' });
+        return;
+      }
+
+      if (response?.success) {
+        pushLog(`Done — ${response.imported} imported, ${response.duplicates} duplicates, ${response.skipped} skipped.`);
+        setResult({
+          type: 'guild',
+          message: `Imported ${response.imported} shoutouts from Writers Guild`,
+          details: {
+            imported: response.imported,
+            duplicates: response.duplicates,
+            skipped: response.skipped,
+            errors: response.errors || [],
+          },
+        });
+        onComplete?.();
+      } else {
+        pushLog(`Error: ${response?.error || 'Unknown'}`);
+        setError(response?.error || 'Import failed');
+      }
+    });
   };
 
   const handleClose = () => {
@@ -365,6 +380,29 @@ export function ExportImportModal({ isOpen, onClose, onComplete, currentFictionI
                   <><i class="fa fa-cloud-download"></i> Import from Writers Guild</>
                 )}
               </button>
+              {(importingGuild || guildLog.length > 0) && (
+                <div class="rr-guild-progress mt-2">
+                  {importingGuild && guildStatus && (
+                    <div class="rr-guild-status"><i class="fa fa-circle-notch fa-spin"></i> {guildStatus}</div>
+                  )}
+                  {guildLog.length > 0 && (
+                    <details class="rr-guild-log">
+                      <summary>Log ({guildLog.length})</summary>
+                      <ul>
+                        {guildLog.map((entry, i) => (
+                          <li key={i}>
+                            <span class="rr-guild-log-time">
+                              {new Date(entry.ts).toLocaleTimeString()}
+                            </span>
+                            {' '}
+                            {entry.step}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </div>
+              )}
             </div>
           </>
         )}

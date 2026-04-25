@@ -35,7 +35,7 @@ mkdir -p "$OUT/dist"
 
 # Copy bundle files only (not dist/firefox itself) to avoid recursion.
 cp dist/*.js dist/*.js.map "$OUT/dist/"
-cp popup.html offscreen.html guild.html "$OUT/"
+cp popup.html offscreen.html "$OUT/"
 cp -r icons "$OUT/"
 
 echo "Generating Firefox manifest..."

@@ -238,6 +238,21 @@ var log = {
   }
 };
 
+// src/integration/writersGuild.js
+var logger = log.scope("rrwg");
+function buildRrwgNotes(booking) {
+  const parts = ["RRWG"];
+  if (booking.status)
+    parts.push(booking.status);
+  if (booking.isMirror)
+    parts.push("mirror");
+  if (!booking.storyLink)
+    parts.push("offline");
+  if (booking.authorName)
+    parts.push(`author: ${booking.authorName}`);
+  return parts.join(" \xB7 ");
+}
+
 // src/common/utils/fictionDetails.js
 function parseFictionDetails(html, fictionId) {
   const doc = new DOMParser().parseFromString(html, "text/html");
@@ -477,7 +492,7 @@ function extractShoutouts(html, excludeFictionId) {
 }
 
 // src/background/index.js
-var logger = log.scope("background");
+var logger2 = log.scope("background");
 var authorLogger = log.scope("author-data");
 console.log("[RR Companion BG] Service worker loading...");
 var SCAN_STATE_KEY = "scanState";
@@ -1126,6 +1141,7 @@ async function checkAllSwaps(opts = {}) {
   try {
     await ensureDB();
     const allShoutouts = await getAll("shoutouts") || [];
+    const todayStr = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
     const unswappedShoutouts = allShoutouts.filter((s) => {
       if (s.swappedDate || !s.fictionId)
         return false;
@@ -1134,6 +1150,14 @@ async function checkAllSwaps(opts = {}) {
           (sch) => String(sch.fictionId) === String(fictionId)
         );
         if (!onOurFiction)
+          return false;
+      }
+      const expectedDates = (s.schedules || []).map((sch) => sch.expectedSwapDate).filter(Boolean).sort();
+      if (expectedDates.length) {
+        const earliest = /* @__PURE__ */ new Date(expectedDates[0] + "T00:00:00");
+        earliest.setDate(earliest.getDate() - 2);
+        const startStr = earliest.toISOString().slice(0, 10);
+        if (todayStr < startStr)
           return false;
       }
       return true;
@@ -1990,38 +2014,219 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })();
     return true;
   }
-  if (message.type === "importGuildShoutouts") {
+  if (message.type === "openTab") {
+    chrome.tabs.create({ url: message.url }).then(
+      (tab) => sendResponse({ success: true, tabId: tab?.id }),
+      (err) => sendResponse({ success: false, error: err?.message })
+    );
+    return true;
+  }
+  if (message.type === "importFromWritersGuild") {
     (async () => {
+      const fetchBookingsInRrwgTab = async (tabId, onProgress) => {
+        console.log("[RR Companion BG] Injecting fetch script into tab", tabId);
+        let injectionResults;
+        try {
+          injectionResults = await chrome.scripting.executeScript({
+            target: { tabId },
+            world: "ISOLATED",
+            func: async () => {
+              const trace = [];
+              const log2 = (...a) => {
+                const line = a.map((x) => typeof x === "string" ? x : JSON.stringify(x)).join(" ");
+                trace.push(line);
+                console.log("[RR Companion Inject]", ...a);
+              };
+              try {
+                log2("Origin:", location.origin, "href:", location.href);
+                async function get(path) {
+                  log2("\u2192", path);
+                  const r = await fetch(`https://rrwritersguild.com/api${path}`, {
+                    credentials: "include",
+                    headers: { Accept: "application/json" }
+                  });
+                  const bodySnippet = (await r.clone().text()).slice(0, 200);
+                  log2("\u2190", path, r.status, bodySnippet);
+                  if (r.status === 401 || r.status === 403)
+                    return { __auth: false, status: r.status, body: bodySnippet };
+                  if (!r.ok)
+                    throw new Error(`RRWG ${path} ${r.status}: ${bodySnippet}`);
+                  if (!bodySnippet)
+                    return { __auth: false };
+                  return JSON.parse(await r.text());
+                }
+                const unwrap = (data, keys = []) => {
+                  if (Array.isArray(data))
+                    return data;
+                  if (!data || typeof data !== "object")
+                    return [];
+                  for (const k of keys)
+                    if (Array.isArray(data[k]))
+                      return data[k];
+                  for (const v of Object.values(data))
+                    if (Array.isArray(v))
+                      return v;
+                  return [];
+                };
+                const meRaw = await get("/discord-auth/me.php");
+                if (meRaw?.__auth === false) {
+                  return { needsAuth: true, trace, meRaw };
+                }
+                const me = meRaw?.user || meRaw;
+                if (!me?.id) {
+                  return { needsAuth: true, trace, meRaw };
+                }
+                log2("Discord user", me.id, me.username);
+                const storiesRaw = await get(`/shoutouts/authors/stories.php?author_id=${encodeURIComponent(me.id)}`);
+                const stories = unwrap(storiesRaw, ["stories", "data"]);
+                log2("Stories", stories.length);
+                const out = [];
+                for (const s of stories) {
+                  const m = String(s.link || "").match(/\/fiction\/(\d+)/);
+                  const ourFictionId = m ? m[1] : null;
+                  const bookingsRaw = await get(`/shoutouts/authors/bookings.php?story_id=${encodeURIComponent(s.id)}`);
+                  const bookings = unwrap(bookingsRaw, ["bookings", "data"]);
+                  log2("Story", s.id, s.title, "\u2192", bookings.length, "bookings");
+                  for (const b of bookings) {
+                    const pm = String(b.storyLink || "").match(/\/fiction\/(\d+)/);
+                    out.push({
+                      booking: b,
+                      ourFictionId,
+                      partnerFictionId: pm ? pm[1] : null
+                    });
+                  }
+                }
+                log2("Total bookings", out.length);
+                return { needsAuth: false, me, bookings: out, trace };
+              } catch (err) {
+                log2("FAILED", err?.message || String(err));
+                return { __error: err?.message || String(err), trace };
+              }
+            }
+          });
+        } catch (err) {
+          console.error("[RR Companion BG] executeScript itself failed", err);
+          throw err;
+        }
+        console.log("[RR Companion BG] executeScript returned", injectionResults?.length, "frames");
+        const result = injectionResults?.[0]?.result;
+        console.log("[RR Companion BG] result:", result);
+        if (result?.trace) {
+          console.log("[RR Companion BG] inject trace:");
+          for (const line of result.trace)
+            console.log("  >>", line);
+        }
+        if (result?.__error)
+          throw new Error(result.__error);
+        return result;
+      };
+      const ensureRrwgTab = async (onProgress) => {
+        const existing = await chrome.tabs.query({ url: "https://rrwritersguild.com/*" });
+        console.log("[RR Companion BG] RRWG tabs found:", existing.map((t) => ({ id: t.id, url: t.url, status: t.status })));
+        const ranked = [...existing].sort((a, b) => {
+          const aDash = (a.url || "").includes("/shoutouts") ? 1 : 0;
+          const bDash = (b.url || "").includes("/shoutouts") ? 1 : 0;
+          if (aDash !== bDash)
+            return bDash - aDash;
+          const aReady = a.status === "complete" ? 1 : 0;
+          const bReady = b.status === "complete" ? 1 : 0;
+          return bReady - aReady;
+        });
+        if (ranked.length && ranked[0].id != null) {
+          console.log("[RR Companion BG] Using RRWG tab", ranked[0].id, ranked[0].url);
+          return { tabId: ranked[0].id, opened: false };
+        }
+        onProgress("Opening RRWG tab in background\u2026");
+        const tab = await chrome.tabs.create({ url: "https://rrwritersguild.com/", active: false });
+        await new Promise((resolve) => {
+          const listener = (tabId, changeInfo) => {
+            if (tabId === tab.id && changeInfo.status === "complete") {
+              chrome.tabs.onUpdated.removeListener(listener);
+              resolve();
+            }
+          };
+          chrome.tabs.onUpdated.addListener(listener);
+          setTimeout(() => {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }, 15e3);
+        });
+        return { tabId: tab.id, opened: true };
+      };
+      const broadcast = async (type, payload) => {
+        const msg = { type, ...payload };
+        try {
+          const tabs = await chrome.tabs.query({ url: "https://www.royalroad.com/*" });
+          for (const tab of tabs) {
+            if (tab.id != null) {
+              chrome.tabs.sendMessage(tab.id, msg).catch(() => {
+              });
+            }
+          }
+        } catch (e) {
+          console.warn("[RR Companion BG] broadcast tabs.query failed", e);
+        }
+      };
+      const progress = (step) => {
+        console.log("[RR Companion BG] RRWG step:", step);
+        broadcast("rrwgImportProgress", { step });
+      };
+      let openedTabId = null;
       try {
         await ensureDB();
-        const entries = message.entries || [];
-        let imported = 0;
+        const { tabId, opened } = await ensureRrwgTab(progress);
+        if (opened)
+          openedTabId = tabId;
+        progress("Fetching from RRWG (using your signed-in session)\u2026");
+        const fetched = await fetchBookingsInRrwgTab(tabId, progress);
+        if (!fetched || fetched.needsAuth) {
+          const payload2 = { success: false, needsAuth: true };
+          sendResponse(payload2);
+          broadcast("rrwgImportResult", payload2);
+          return;
+        }
+        const bookings = fetched.bookings || [];
+        console.log("[RR Companion BG] Got RRWG bookings:", bookings.length);
+        progress(`Importing ${bookings.length} bookings\u2026`);
         const existingShoutouts = await getAll("shoutouts");
-        for (const entry of entries) {
+        let imported = 0;
+        let duplicates = 0;
+        let skipped = 0;
+        const errors = [];
+        for (let i = 0; i < bookings.length; i++) {
+          const { booking, ourFictionId, partnerFictionId } = bookings[i];
           try {
-            const fictionIdMatch = entry.code.match(/\/fiction\/(\d+)/);
-            if (!fictionIdMatch)
+            progress(`Importing ${i + 1}/${bookings.length}\u2026`);
+            const date = booking.dateStr;
+            if (!date) {
+              skipped++;
               continue;
-            const fictionId = fictionIdMatch[1];
-            const isDuplicate = existingShoutouts.some(
-              (s) => s.fictionId === fictionId && s.schedules?.some((sch) => sch.date === entry.date)
-            );
-            if (isDuplicate)
+            }
+            const dupe = existingShoutouts.find((s) => {
+              if ((s.fictionId || "") !== (partnerFictionId || ""))
+                return false;
+              return (s.schedules || []).some(
+                (sch) => sch.date === date && String(sch.fictionId || "") === String(ourFictionId || "")
+              );
+            });
+            if (dupe) {
+              duplicates++;
               continue;
-            const details = await fetchFictionDetails(fictionId);
+            }
+            const partnerDetails = partnerFictionId ? await fetchFictionDetails(partnerFictionId) : null;
             const shoutout = {
-              code: entry.code,
-              fictionId,
-              fictionTitle: details?.fictionTitle || "",
-              fictionUrl: `https://www.royalroad.com/fiction/${fictionId}`,
-              coverUrl: details?.coverUrl || "",
-              authorName: details?.authorName || "",
-              authorAvatar: details?.authorAvatar || "",
-              profileUrl: details?.profileUrl || "",
+              code: booking.shoutoutCode || "",
+              fictionId: partnerFictionId || "",
+              fictionTitle: partnerDetails?.fictionTitle || booking.storyTitle || (booking.storyLink ? "" : "Offline Swap"),
+              fictionUrl: partnerDetails?.fictionUrl || booking.storyLink || "",
+              coverUrl: partnerDetails?.coverUrl || "",
+              authorName: partnerDetails?.authorName || booking.authorName || "",
+              authorAvatar: partnerDetails?.authorAvatar || "",
+              profileUrl: partnerDetails?.profileUrl || "",
+              notes: buildRrwgNotes(booking),
               schedules: [{
-                fictionId: null,
-                // User will assign later
-                date: entry.date,
+                fictionId: ourFictionId,
+                date,
                 chapter: null,
                 chapterUrl: null
               }],
@@ -2034,12 +2239,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             await save("shoutouts", shoutout);
             imported++;
           } catch (err) {
-            console.error("[RR Companion BG] Error importing guild entry:", err);
+            console.error("[RR Companion BG] Error importing RRWG booking:", err);
+            errors.push(err.message);
+            skipped++;
           }
         }
-        sendResponse({ success: true, count: imported });
+        const payload = { success: true, imported, duplicates, skipped, errors };
+        console.log("[RR Companion BG] RRWG import done", payload);
+        sendResponse(payload);
+        broadcast("rrwgImportResult", payload);
       } catch (err) {
-        sendResponse({ success: false, error: err.message });
+        console.error("[RR Companion BG] RRWG import failed:", err);
+        const payload = { success: false, error: err.message };
+        sendResponse(payload);
+        broadcast("rrwgImportResult", payload);
+      } finally {
+        if (openedTabId != null) {
+          chrome.tabs.remove(openedTabId).catch(() => {
+          });
+        }
       }
     })();
     return true;

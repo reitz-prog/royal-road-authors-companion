@@ -37131,6 +37131,10 @@
             const allArchivedSwapped = anyArchived && archivedScheds.every((x3) => x3.swappedDate);
             const anyArchivedSwapped = archivedScheds.some((x3) => x3.swappedDate);
             const allArchivedScanned = anyArchived && archivedScheds.every((x3) => x3.lastSwapScanDate);
+            const todayStrCard = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+            const anyPendingExpected = scheds.some(
+              (x3) => x3.expectedSwapDate && !x3.swappedDate && todayStrCard < x3.expectedSwapDate
+            );
             let statusClass = "rr-swap-status-scheduled";
             let statusIcon = "fa-clock";
             let statusTitle = "Scheduled \u2014 not posted yet";
@@ -37146,6 +37150,10 @@
               statusClass = "rr-swap-status-scheduled";
               statusIcon = "fa-adjust";
               statusTitle = "Partial swap \u2014 some schedules not yet reciprocated";
+            } else if (anyPendingExpected) {
+              statusClass = "rr-swap-status-pending";
+              statusIcon = "fa-hourglass-start";
+              statusTitle = "Pending \u2014 expected date not yet reached";
             } else if (anyArchived && allArchivedScanned) {
               statusClass = "rr-swap-status-notfound";
               statusIcon = "fa-times";
@@ -37185,12 +37193,19 @@
                         /* @__PURE__ */ u4("span", { class: "rr-archive-author-link", "data-author": s4.authorName, children: s4.authorName || "Unknown" })
                       ] })
                     ] }),
+                    s4.notes && /* @__PURE__ */ u4("div", { class: "rr-archive-shoutout-notes", title: s4.notes, children: [
+                      /* @__PURE__ */ u4("i", { class: "fa fa-sticky-note-o" }),
+                      " ",
+                      s4.notes
+                    ] }),
                     /* @__PURE__ */ u4("div", { class: "rr-archive-schedule-lines", children: scheds.map((sched, idx) => {
                       const fiction = myFictions.find((f5) => String(f5.fictionId) === String(sched.fictionId));
                       const fictionTitle = fiction?.title || `Fiction ${sched.fictionId}`;
                       const wePosted = !!sched.chapter;
                       const swapped = !!sched.swappedDate;
                       const scanned = !!sched.lastSwapScanDate;
+                      const todayStr = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+                      const isPending = !swapped && sched.expectedSwapDate && todayStr < sched.expectedSwapDate;
                       let lineClass = "rr-schedule-scheduled";
                       let indicator = /* @__PURE__ */ u4("span", { class: "rr-schedule-swap-state", title: "Scheduled \u2014 not posted yet", children: [
                         /* @__PURE__ */ u4("i", { class: "fa fa-clock" }),
@@ -37214,6 +37229,13 @@
                             ]
                           }
                         );
+                      } else if (isPending) {
+                        lineClass = "rr-schedule-pending";
+                        indicator = /* @__PURE__ */ u4("span", { class: "rr-schedule-swap-state", title: `Expected by ${sched.expectedSwapDate} \u2014 won't scan until then`, children: [
+                          /* @__PURE__ */ u4("i", { class: "fa fa-hourglass-start" }),
+                          " Pending ",
+                          sched.expectedSwapDate
+                        ] });
                       } else if (wePosted && scanned) {
                         lineClass = "rr-schedule-notfound";
                         indicator = /* @__PURE__ */ u4("span", { class: "rr-schedule-swap-state", title: `Scanned ${sched.lastSwapScanDate}, no link to ${fictionTitle} found`, children: [
@@ -37824,10 +37846,15 @@
     shoutout = null,
     mode = "add",
     myFictions = [],
-    currentFictionId = null
+    currentFictionId = null,
+    contacts = [],
+    onSaveContactDiscord,
+    onSaveScheduleField
   }) {
     const [code, setCode] = d3(shoutout?.code || "");
     const [expectedReturn, setExpectedReturn] = d3(shoutout?.expectedReturnDate || "");
+    const [discordUsername, setDiscordUsername] = d3("");
+    const [notes, setNotes] = d3(shoutout?.notes || "");
     const [authorInfo, setAuthorInfo] = d3(null);
     const [loading, setLoading] = d3(false);
     const [showPreview, setShowPreview] = d3(false);
@@ -37853,6 +37880,7 @@
       const newCode = shoutout?.code || "";
       setCode(newCode);
       setExpectedReturn(shoutout?.expectedReturnDate || "");
+      setNotes(shoutout?.notes || "");
       setShowPreview(false);
       setHideCode(false);
       setLoading(false);
@@ -37898,6 +37926,19 @@
         setAuthorInfo(null);
       }
     }, [isOpen, shoutout, date, currentFictionId, myFictions]);
+    y2(() => {
+      if (!isOpen)
+        return;
+      const author = shoutout?.authorName || authorInfo?.authorName;
+      if (!author)
+        return;
+      const contact = contacts.find((c4) => c4.authorName === author);
+      if (contact) {
+        setDiscordUsername(contact.discordUsername || "");
+      } else if (shoutout?.discordUsername) {
+        setDiscordUsername(shoutout.discordUsername);
+      }
+    }, [isOpen, shoutout?.id, shoutout?.authorName, authorInfo?.authorName, contacts]);
     y2(() => {
       if (!isOpen || !shoutout?.id)
         return;
@@ -38009,11 +38050,13 @@
         id: shoutout?.id,
         code: actualCode,
         expectedReturnDate: expectedReturn,
+        discordUsername,
+        notes,
         schedules,
         ...authorInfo
       });
       onClose();
-    }, [code, expectedReturn, authorInfo, shoutout, schedules, onSave, onClose]);
+    }, [code, expectedReturn, discordUsername, notes, authorInfo, shoutout, schedules, onSave, onClose]);
     const handleRemoveSchedule = (index) => {
       setSchedules((prev) => prev.filter((_3, i5) => i5 !== index));
     };
@@ -38180,7 +38223,20 @@
                     onCheckSwap: handleCheckSwap,
                     checkingSwap,
                     checkProgress,
-                    swapResult
+                    swapResult,
+                    mode,
+                    discordUsername,
+                    onDiscordUsernameChange: (next) => {
+                      setDiscordUsername(next);
+                      const author = effectiveAuthorInfo?.authorName || shoutout?.authorName;
+                      if (!author)
+                        return;
+                      onSaveContactDiscord?.(author, next);
+                    },
+                    onSaveScheduleField: (idx, fields) => {
+                      if (shoutout?.id != null)
+                        onSaveScheduleField?.(shoutout.id, idx, fields);
+                    }
                   }
                 ) })
               ] })
@@ -38332,6 +38388,19 @@
                       /* @__PURE__ */ u4("button", { class: "btn btn-sm btn-primary", onClick: handleAddSchedule, children: "Add" }),
                       /* @__PURE__ */ u4("button", { class: "btn btn-sm btn-secondary", onClick: () => setShowAddSchedule(false), children: "Cancel" })
                     ] })
+                  ] }),
+                  /* @__PURE__ */ u4("div", { class: "rr-notes-section", children: [
+                    /* @__PURE__ */ u4("label", { class: "rr-modal-label", children: "Notes:" }),
+                    /* @__PURE__ */ u4(
+                      "textarea",
+                      {
+                        class: "form-control rr-notes-textarea",
+                        placeholder: "Notes (optional)",
+                        rows: "3",
+                        value: notes,
+                        onInput: (e4) => setNotes(e4.target.value)
+                      }
+                    )
                   ] })
                 ] }),
                 /* @__PURE__ */ u4("div", { class: "rr-modal-author-panel", children: /* @__PURE__ */ u4(
@@ -38345,7 +38414,20 @@
                     onCheckSwap: handleCheckSwap,
                     checkingSwap,
                     checkProgress,
-                    swapResult
+                    swapResult,
+                    mode,
+                    discordUsername,
+                    onDiscordUsernameChange: (next) => {
+                      setDiscordUsername(next);
+                      const author = effectiveAuthorInfo?.authorName || shoutout?.authorName;
+                      if (!author)
+                        return;
+                      onSaveContactDiscord?.(author, next);
+                    },
+                    onSaveScheduleField: (idx, fields) => {
+                      if (shoutout?.id != null)
+                        onSaveScheduleField?.(shoutout.id, idx, fields);
+                    }
                   }
                 ) })
               ] })
@@ -38372,12 +38454,17 @@
     const scanned = !!sched.lastSwapScanDate;
     if (wePosted && theyPosted)
       return "SWAPPED";
-    if (wePosted && !theyPosted && scanned)
-      return "NOT FOUND";
-    if (wePosted && !theyPosted && !scanned)
-      return "NOT SCANNED";
     if (theyPosted)
       return "SHOUTED";
+    if (sched.expectedSwapDate) {
+      const todayStr = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+      if (todayStr < sched.expectedSwapDate)
+        return "PENDING";
+    }
+    if (wePosted && scanned)
+      return "NOT FOUND";
+    if (wePosted)
+      return "NOT SCANNED";
     return "SCHEDULED";
   }
   function SchedulePill({ state, sched }) {
@@ -38386,7 +38473,8 @@
       "NOT FOUND": "rr-swap-badge-not-found",
       "NOT SCANNED": "rr-swap-badge-not-scanned",
       SHOUTED: "rr-swap-badge-shouted",
-      SCHEDULED: "rr-swap-badge-scheduled"
+      SCHEDULED: "rr-swap-badge-scheduled",
+      PENDING: "rr-swap-badge-pending"
     };
     const cls = classByState[state] || "rr-swap-badge-scheduled";
     const clickable = state === "SWAPPED" && !!sched.swappedChapterUrl;
@@ -38395,6 +38483,8 @@
       titleParts.push(`in "${sched.swappedChapter}"`);
     if (state === "NOT FOUND" && sched.lastSwapScanDate)
       titleParts.push(`scanned ${sched.lastSwapScanDate}`);
+    if (state === "PENDING" && sched.expectedSwapDate)
+      titleParts.push(`expected by ${sched.expectedSwapDate}`);
     const title = titleParts.join(" \u2014 ");
     if (clickable) {
       return /* @__PURE__ */ u4(
@@ -38412,7 +38502,203 @@
     }
     return /* @__PURE__ */ u4("span", { class: `rr-swap-pill ${cls}`, title, children: state });
   }
-  function AuthorInfo({ info, loading, shoutout, schedules = [], myFictions = [], onCheckSwap, checkingSwap, checkProgress, swapResult }) {
+  function ExpectedDatePill({ value, onSave }) {
+    const [editing, setEditing] = d3(!value);
+    const [draft, setDraft] = d3(value || "");
+    const [saved, setSaved] = d3(false);
+    const inputRef = A2(null);
+    y2(() => {
+      setDraft(value || "");
+      setEditing(!value);
+    }, [value]);
+    const openPicker = q2((evt) => {
+      const el = inputRef.current;
+      console.log("[ExpectedDatePill] openPicker", {
+        hasEl: !!el,
+        hasShowPicker: typeof el?.showPicker === "function",
+        isTrusted: evt?.isTrusted
+      });
+      if (!el)
+        return;
+      try {
+        el.focus();
+        if (typeof el.showPicker === "function") {
+          el.showPicker();
+        } else {
+          el.click();
+        }
+      } catch (e4) {
+        console.warn("[ExpectedDatePill] showPicker failed", e4);
+      }
+    }, []);
+    const handleConfirm = q2(() => {
+      const trimmed = (draft || "").trim();
+      onSave?.(trimmed);
+      setEditing(false);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    }, [draft, onSave]);
+    const handleCancel = q2(() => {
+      setDraft(value || "");
+      setEditing(!value);
+    }, [value]);
+    if (editing) {
+      return /* @__PURE__ */ u4("span", { class: "rr-expected-pill rr-expected-pill-editing", children: [
+        /* @__PURE__ */ u4("i", { class: "fa fa-clock-o", "aria-hidden": "true" }),
+        /* @__PURE__ */ u4("span", { class: "rr-expected-pill-label", children: "Expected:" }),
+        /* @__PURE__ */ u4(
+          "input",
+          {
+            ref: inputRef,
+            type: "date",
+            class: "rr-expected-pill-input",
+            value: draft,
+            onInput: (e4) => setDraft(e4.target.value),
+            onKeyDown: (e4) => {
+              if (e4.key === "Enter") {
+                e4.preventDefault();
+                handleConfirm();
+              }
+              if (e4.key === "Escape") {
+                e4.preventDefault();
+                handleCancel();
+              }
+            },
+            autoFocus: true
+          }
+        ),
+        /* @__PURE__ */ u4(
+          "button",
+          {
+            type: "button",
+            class: "rr-expected-pill-btn",
+            onMouseDown: (e4) => {
+              e4.preventDefault();
+              openPicker(e4);
+            },
+            title: "Open calendar",
+            "aria-label": "Open calendar",
+            children: /* @__PURE__ */ u4("i", { class: "fa fa-calendar" })
+          }
+        ),
+        /* @__PURE__ */ u4("button", { type: "button", class: "rr-expected-pill-btn rr-expected-pill-confirm", onClick: handleConfirm, title: "Save", children: /* @__PURE__ */ u4("i", { class: "fa fa-check" }) }),
+        !!value && /* @__PURE__ */ u4("button", { type: "button", class: "rr-expected-pill-btn", onClick: handleCancel, title: "Cancel", children: /* @__PURE__ */ u4("i", { class: "fa fa-times" }) })
+      ] });
+    }
+    return /* @__PURE__ */ u4("span", { class: "rr-expected-pill", title: `Expected by ${value}`, children: [
+      /* @__PURE__ */ u4("i", { class: "fa fa-clock-o", "aria-hidden": "true" }),
+      /* @__PURE__ */ u4("span", { class: "rr-expected-pill-label", children: "Expected:" }),
+      /* @__PURE__ */ u4("span", { class: "rr-expected-pill-date", children: value }),
+      saved && /* @__PURE__ */ u4("span", { class: "rr-expected-pill-saved", children: "Saved" }),
+      /* @__PURE__ */ u4("button", { type: "button", class: "rr-expected-pill-btn", onClick: () => setEditing(true), title: "Edit expected date", children: /* @__PURE__ */ u4("i", { class: "fa fa-pencil" }) })
+    ] });
+  }
+  function DiscordBadge({ value, onSave }) {
+    const [editing, setEditing] = d3(!value);
+    const [draft, setDraft] = d3(value || "");
+    const [copied, setCopied] = d3(false);
+    const [saved, setSaved] = d3(false);
+    y2(() => {
+      setDraft(value || "");
+      setEditing(!value);
+    }, [value]);
+    const handleCopy = q2(async () => {
+      if (!value)
+        return;
+      try {
+        await navigator.clipboard.writeText(value);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1200);
+      } catch (e4) {
+      }
+    }, [value]);
+    const handleConfirm = q2(() => {
+      const trimmed = (draft || "").trim();
+      console.log("[DiscordBadge] confirm save", { trimmed, hasOnSave: typeof onSave === "function" });
+      onSave?.(trimmed);
+      setEditing(false);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    }, [draft, onSave]);
+    const handleCancel = q2(() => {
+      setDraft(value || "");
+      setEditing(!value);
+    }, [value]);
+    return /* @__PURE__ */ u4("div", { class: "rr-discord-row", children: [
+      /* @__PURE__ */ u4("span", { class: "rr-discord-row-icon", "aria-hidden": "true", title: "Discord username", children: /* @__PURE__ */ u4("svg", { viewBox: "0 0 24 24", width: "16", height: "16", fill: "currentColor", children: /* @__PURE__ */ u4("path", { d: "M19.27 5.33a18.18 18.18 0 0 0-4.55-1.43.07.07 0 0 0-.07.04c-.2.36-.42.83-.57 1.2a16.85 16.85 0 0 0-5.16 0c-.15-.38-.38-.84-.58-1.2a.08.08 0 0 0-.07-.04c-1.6.27-3.13.75-4.55 1.43a.07.07 0 0 0-.03.03C.83 9.61.18 13.78.51 17.9a.08.08 0 0 0 .03.05 18.34 18.34 0 0 0 5.55 2.84.08.08 0 0 0 .08-.03c.43-.59.81-1.21 1.13-1.86a.08.08 0 0 0-.04-.1 12.1 12.1 0 0 1-1.74-.83.08.08 0 0 1 0-.13c.12-.09.24-.18.35-.27a.08.08 0 0 1 .08-.01 13.07 13.07 0 0 0 11.16 0 .08.08 0 0 1 .08.01l.35.27a.08.08 0 0 1 0 .13c-.55.32-1.13.6-1.74.83a.08.08 0 0 0-.04.11c.32.65.71 1.27 1.13 1.85a.08.08 0 0 0 .08.03 18.27 18.27 0 0 0 5.56-2.84.08.08 0 0 0 .03-.05c.39-4.78-.65-8.91-2.76-12.55a.06.06 0 0 0-.03-.03ZM8.02 15.39c-1.1 0-2-1-2-2.24 0-1.23.88-2.24 2-2.24 1.13 0 2.02 1.02 2 2.24 0 1.24-.88 2.24-2 2.24Zm7.39 0c-1.1 0-2-1-2-2.24 0-1.23.88-2.24 2-2.24 1.13 0 2.02 1.02 2 2.24 0 1.24-.87 2.24-2 2.24Z" }) }) }),
+      editing ? /* @__PURE__ */ u4(S, { children: [
+        /* @__PURE__ */ u4(
+          "input",
+          {
+            type: "text",
+            class: "form-control form-control-sm rr-discord-row-input",
+            placeholder: "Discord username",
+            value: draft,
+            onInput: (e4) => setDraft(e4.target.value),
+            onKeyDown: (e4) => {
+              if (e4.key === "Enter") {
+                e4.preventDefault();
+                handleConfirm();
+              }
+              if (e4.key === "Escape") {
+                e4.preventDefault();
+                handleCancel();
+              }
+            },
+            autoFocus: true
+          }
+        ),
+        /* @__PURE__ */ u4(
+          "button",
+          {
+            type: "button",
+            class: "rr-discord-row-btn rr-discord-row-confirm",
+            onClick: handleConfirm,
+            title: "Save",
+            "aria-label": "Save Discord username",
+            children: /* @__PURE__ */ u4("i", { class: "fa fa-check" })
+          }
+        ),
+        !!value && /* @__PURE__ */ u4(
+          "button",
+          {
+            type: "button",
+            class: "rr-discord-row-btn",
+            onClick: handleCancel,
+            title: "Cancel",
+            "aria-label": "Cancel",
+            children: /* @__PURE__ */ u4("i", { class: "fa fa-times" })
+          }
+        )
+      ] }) : /* @__PURE__ */ u4(S, { children: [
+        /* @__PURE__ */ u4("span", { class: "rr-discord-row-text", children: value }),
+        saved && /* @__PURE__ */ u4("span", { class: "rr-discord-row-saved", "aria-live": "polite", children: "Saved" }),
+        /* @__PURE__ */ u4(
+          "button",
+          {
+            type: "button",
+            class: "rr-discord-row-btn",
+            onClick: handleCopy,
+            title: copied ? "Copied" : "Copy username",
+            "aria-label": "Copy Discord username",
+            children: /* @__PURE__ */ u4("i", { class: copied ? "fa fa-check" : "fa fa-copy" })
+          }
+        ),
+        /* @__PURE__ */ u4(
+          "button",
+          {
+            type: "button",
+            class: "rr-discord-row-btn",
+            onClick: () => setEditing(true),
+            title: "Edit",
+            "aria-label": "Edit Discord username",
+            children: /* @__PURE__ */ u4("i", { class: "fa fa-pencil" })
+          }
+        )
+      ] })
+    ] });
+  }
+  function AuthorInfo({ info, loading, shoutout, schedules = [], myFictions = [], onCheckSwap, checkingSwap, checkProgress, swapResult, mode = "edit", discordUsername = "", onDiscordUsernameChange, onSaveScheduleField }) {
     if (loading) {
       return /* @__PURE__ */ u4("div", { class: "rr-author-empty", children: "Loading..." });
     }
@@ -38434,6 +38720,13 @@
         "by ",
         info.authorName || "Unknown"
       ] }) }),
+      /* @__PURE__ */ u4(
+        DiscordBadge,
+        {
+          value: discordUsername,
+          onSave: onDiscordUsernameChange
+        }
+      ),
       info.fictionUrl && /* @__PURE__ */ u4("a", { href: info.fictionUrl, target: "_blank", rel: "noopener", class: "btn btn-sm btn-outline-primary rr-view-fiction-btn", children: "View Fiction" }),
       schedules.length > 0 && /* @__PURE__ */ u4("div", { class: "rr-scheduled-for-section", children: [
         /* @__PURE__ */ u4("div", { class: "rr-scheduled-for-label", children: "Scheduled for:" }),
@@ -38446,7 +38739,14 @@
             /* @__PURE__ */ u4("span", { class: "rr-scheduled-fiction-title", children: fictionTitle }),
             sched.date && /* @__PURE__ */ u4("span", { class: "rr-scheduled-date", children: sched.date }),
             !sched.date && /* @__PURE__ */ u4("span", { class: "rr-scheduled-date rr-unscheduled", children: "Unscheduled" }),
-            shoutout && /* @__PURE__ */ u4(SchedulePill, { state, sched })
+            shoutout && /* @__PURE__ */ u4(SchedulePill, { state, sched }),
+            shoutout && !(sched.swappedDate && !sched.expectedSwapDate) && /* @__PURE__ */ u4(
+              ExpectedDatePill,
+              {
+                value: sched.expectedSwapDate || "",
+                onSave: (next) => onSaveScheduleField?.(idx, { expectedSwapDate: next })
+              }
+            )
           ] }, idx);
         }) })
       ] }),
@@ -38701,6 +39001,15 @@
 
   // src/common/settings/ui/SettingsModal.jsx
   var logger13 = log.scope("settings");
+  function formatBytes(bytes) {
+    if (bytes == null || isNaN(bytes))
+      return "\u2014";
+    if (bytes < 1024)
+      return `${bytes} B`;
+    if (bytes < 1024 * 1024)
+      return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  }
   var TIMEZONE_OPTIONS = [
     { value: "UTC", label: "UTC (GMT+0)" },
     { value: "America/New_York", label: "Eastern US (GMT-5/-4)" },
@@ -38723,6 +39032,38 @@
     const [writersGuildEnabled, setWritersGuildEnabled] = d3(settings.writersGuildEnabled || false);
     const [showClearConfirm, setShowClearConfirm] = d3(false);
     const [showDeleteDbConfirm, setShowDeleteDbConfirm] = d3(false);
+    const [storageUsage, setStorageUsage] = d3(null);
+    const [activeTab, setActiveTab] = d3("general");
+    const refreshStorageUsage = q2(async () => {
+      try {
+        if (typeof chrome === "undefined" || !chrome.storage?.local?.getBytesInUse)
+          return;
+        const total = await chrome.storage.local.getBytesInUse(null);
+        const quota = chrome.storage.local.QUOTA_BYTES;
+        const trackedKeys = ["rrLogs", "scanState", "importState", "swapCheckState", "checkAllSwapsState"];
+        const byKey = {};
+        await Promise.all(
+          trackedKeys.map(async (k3) => {
+            byKey[k3] = await chrome.storage.local.getBytesInUse(k3);
+          })
+        );
+        let estimate = null;
+        try {
+          if (navigator.storage?.estimate) {
+            estimate = await navigator.storage.estimate();
+          }
+        } catch (e4) {
+        }
+        setStorageUsage({ total, quota, byKey, estimate });
+      } catch (err) {
+        logger13.warn("Failed to read storage usage", err);
+      }
+    }, []);
+    y2(() => {
+      if (!isOpen)
+        return;
+      refreshStorageUsage();
+    }, [isOpen, refreshStorageUsage]);
     const handleSave = () => {
       saveSettings({ placement, timezone, writersGuildEnabled });
       logger13.info("Settings saved");
@@ -38791,124 +39132,206 @@
           title: "Settings",
           className: "rr-modal-settings",
           footer,
-          children: /* @__PURE__ */ u4("div", { class: "rr-settings-form", children: [
-            /* @__PURE__ */ u4("div", { class: "rr-settings-group", children: [
-              /* @__PURE__ */ u4("div", { class: "rr-settings-label", children: "Shoutout Placement" }),
-              /* @__PURE__ */ u4("div", { class: "rr-settings-options", children: [
-                /* @__PURE__ */ u4("label", { class: "rr-settings-radio", children: [
-                  /* @__PURE__ */ u4(
-                    "input",
-                    {
-                      type: "radio",
-                      name: "placement",
-                      value: "pre",
-                      checked: placement === "pre",
-                      onChange: () => setPlacement("pre")
-                    }
-                  ),
-                  /* @__PURE__ */ u4("span", { children: "Pre-chapter Author's Note" })
-                ] }),
-                /* @__PURE__ */ u4("label", { class: "rr-settings-radio", children: [
-                  /* @__PURE__ */ u4(
-                    "input",
-                    {
-                      type: "radio",
-                      name: "placement",
-                      value: "post",
-                      checked: placement === "post",
-                      onChange: () => setPlacement("post")
-                    }
-                  ),
-                  /* @__PURE__ */ u4("span", { children: "Post-chapter Author's Note" })
-                ] })
-              ] })
-            ] }),
-            /* @__PURE__ */ u4("div", { class: "rr-settings-group", children: [
-              /* @__PURE__ */ u4("div", { class: "rr-settings-label", children: "Timezone" }),
-              /* @__PURE__ */ u4("p", { class: "rr-settings-description", children: "Used for displaying dates in analytics and calendar." }),
+          children: /* @__PURE__ */ u4("div", { class: "rr-settings-layout", children: [
+            /* @__PURE__ */ u4("nav", { class: "rr-settings-tabs", children: [
               /* @__PURE__ */ u4(
-                Select,
+                "button",
                 {
-                  value: timezone,
-                  onChange: (e4) => setTimezone(e4.target.value),
-                  children: [
-                    /* @__PURE__ */ u4("optgroup", { label: "Common Timezones", children: TIMEZONE_OPTIONS.map((tz) => /* @__PURE__ */ u4("option", { value: tz.value, children: tz.label }, tz.value)) }),
-                    /* @__PURE__ */ u4("optgroup", { label: "Your Timezone", children: /* @__PURE__ */ u4("option", { value: Intl.DateTimeFormat().resolvedOptions().timeZone, children: [
-                      Intl.DateTimeFormat().resolvedOptions().timeZone,
-                      " (Local)"
-                    ] }) })
-                  ]
+                  class: `rr-settings-tab ${activeTab === "general" ? "active" : ""}`,
+                  onClick: () => setActiveTab("general"),
+                  children: "General"
+                }
+              ),
+              /* @__PURE__ */ u4(
+                "button",
+                {
+                  class: `rr-settings-tab ${activeTab === "integrations" ? "active" : ""}`,
+                  onClick: () => setActiveTab("integrations"),
+                  children: "Integrations"
+                }
+              ),
+              /* @__PURE__ */ u4(
+                "button",
+                {
+                  class: `rr-settings-tab ${activeTab === "storage" ? "active" : ""}`,
+                  onClick: () => setActiveTab("storage"),
+                  children: "Storage & Logs"
+                }
+              ),
+              /* @__PURE__ */ u4(
+                "button",
+                {
+                  class: `rr-settings-tab rr-settings-tab-danger ${activeTab === "danger" ? "active" : ""}`,
+                  onClick: () => setActiveTab("danger"),
+                  children: "Danger Zone"
                 }
               )
             ] }),
-            /* @__PURE__ */ u4("div", { class: "rr-settings-group", children: [
-              /* @__PURE__ */ u4("label", { class: "rr-settings-label rr-settings-label-disabled", children: [
-                /* @__PURE__ */ u4("input", { type: "checkbox", disabled: true }),
-                /* @__PURE__ */ u4("span", { children: "Notify author on swap" }),
-                /* @__PURE__ */ u4("span", { class: "rr-settings-badge", children: "Coming Soon" })
+            /* @__PURE__ */ u4("div", { class: "rr-settings-form", children: [
+              activeTab === "general" && /* @__PURE__ */ u4(S, { children: [
+                /* @__PURE__ */ u4("div", { class: "rr-settings-group", children: [
+                  /* @__PURE__ */ u4("div", { class: "rr-settings-label", children: "Shoutout Placement" }),
+                  /* @__PURE__ */ u4("div", { class: "rr-settings-options", children: [
+                    /* @__PURE__ */ u4("label", { class: "rr-settings-radio", children: [
+                      /* @__PURE__ */ u4(
+                        "input",
+                        {
+                          type: "radio",
+                          name: "placement",
+                          value: "pre",
+                          checked: placement === "pre",
+                          onChange: () => setPlacement("pre")
+                        }
+                      ),
+                      /* @__PURE__ */ u4("span", { children: "Pre-chapter Author's Note" })
+                    ] }),
+                    /* @__PURE__ */ u4("label", { class: "rr-settings-radio", children: [
+                      /* @__PURE__ */ u4(
+                        "input",
+                        {
+                          type: "radio",
+                          name: "placement",
+                          value: "post",
+                          checked: placement === "post",
+                          onChange: () => setPlacement("post")
+                        }
+                      ),
+                      /* @__PURE__ */ u4("span", { children: "Post-chapter Author's Note" })
+                    ] })
+                  ] })
+                ] }),
+                /* @__PURE__ */ u4("div", { class: "rr-settings-group", children: [
+                  /* @__PURE__ */ u4("div", { class: "rr-settings-label", children: "Timezone" }),
+                  /* @__PURE__ */ u4("p", { class: "rr-settings-description", children: "Used for displaying dates in analytics and calendar." }),
+                  /* @__PURE__ */ u4(
+                    Select,
+                    {
+                      value: timezone,
+                      onChange: (e4) => setTimezone(e4.target.value),
+                      children: [
+                        /* @__PURE__ */ u4("optgroup", { label: "Common Timezones", children: TIMEZONE_OPTIONS.map((tz) => /* @__PURE__ */ u4("option", { value: tz.value, children: tz.label }, tz.value)) }),
+                        /* @__PURE__ */ u4("optgroup", { label: "Your Timezone", children: /* @__PURE__ */ u4("option", { value: Intl.DateTimeFormat().resolvedOptions().timeZone, children: [
+                          Intl.DateTimeFormat().resolvedOptions().timeZone,
+                          " (Local)"
+                        ] }) })
+                      ]
+                    }
+                  )
+                ] })
               ] }),
-              /* @__PURE__ */ u4("p", { class: "rr-settings-description", children: "Automatically notify the other author via Discord when a swap is completed." })
-            ] }),
-            /* @__PURE__ */ u4("div", { class: "rr-settings-group", children: [
-              /* @__PURE__ */ u4("label", { class: "rr-settings-label", style: { display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }, children: [
+              activeTab === "integrations" && /* @__PURE__ */ u4(S, { children: [
+                /* @__PURE__ */ u4("div", { class: "rr-settings-group", children: [
+                  /* @__PURE__ */ u4("label", { class: "rr-settings-label", style: { display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }, children: [
+                    /* @__PURE__ */ u4(
+                      "input",
+                      {
+                        type: "checkbox",
+                        checked: writersGuildEnabled,
+                        onChange: (e4) => setWritersGuildEnabled(e4.target.checked)
+                      }
+                    ),
+                    /* @__PURE__ */ u4("span", { children: "Enable Writers Guild Integration" })
+                  ] }),
+                  /* @__PURE__ */ u4("p", { class: "rr-settings-description", children: "Import shoutouts from rrwritersguild.com/shoutouts/dashboard" })
+                ] }),
+                /* @__PURE__ */ u4("div", { class: "rr-settings-group", children: [
+                  /* @__PURE__ */ u4("label", { class: "rr-settings-label rr-settings-label-disabled", children: [
+                    /* @__PURE__ */ u4("input", { type: "checkbox", disabled: true }),
+                    /* @__PURE__ */ u4("span", { children: "Notify author on swap" }),
+                    /* @__PURE__ */ u4("span", { class: "rr-settings-badge", children: "Coming Soon" })
+                  ] }),
+                  /* @__PURE__ */ u4("p", { class: "rr-settings-description", children: "Automatically notify the other author via Discord when a swap is completed." })
+                ] })
+              ] }),
+              activeTab === "storage" && /* @__PURE__ */ u4(S, { children: [
+                /* @__PURE__ */ u4("div", { class: "rr-settings-group", children: [
+                  /* @__PURE__ */ u4("div", { class: "rr-settings-label", children: "Storage usage" }),
+                  /* @__PURE__ */ u4("p", { class: "rr-settings-description", children: "How much of the extension's quota is used. Logs are by far the biggest consumer." }),
+                  storageUsage ? /* @__PURE__ */ u4("div", { class: "rr-storage-usage", children: [
+                    /* @__PURE__ */ u4("div", { class: "rr-storage-total", children: [
+                      /* @__PURE__ */ u4("strong", { children: formatBytes(storageUsage.total) }),
+                      storageUsage.quota ? /* @__PURE__ */ u4(S, { children: [
+                        " / ",
+                        formatBytes(storageUsage.quota)
+                      ] }) : null,
+                      storageUsage.quota ? /* @__PURE__ */ u4("span", { class: "rr-storage-pct", children: [
+                        " ",
+                        "(",
+                        Math.round(storageUsage.total / storageUsage.quota * 100),
+                        "%)"
+                      ] }) : null
+                    ] }),
+                    storageUsage.quota ? /* @__PURE__ */ u4("div", { class: "rr-storage-bar", children: /* @__PURE__ */ u4(
+                      "div",
+                      {
+                        class: "rr-storage-bar-fill",
+                        style: { width: `${Math.min(100, storageUsage.total / storageUsage.quota * 100)}%` }
+                      }
+                    ) }) : null,
+                    /* @__PURE__ */ u4("ul", { class: "rr-storage-breakdown", children: Object.entries(storageUsage.byKey).sort((a4, b3) => b3[1] - a4[1]).map(([key, bytes]) => /* @__PURE__ */ u4("li", { children: [
+                      /* @__PURE__ */ u4("span", { class: "rr-storage-key", children: key }),
+                      /* @__PURE__ */ u4("span", { class: "rr-storage-bytes", children: formatBytes(bytes) })
+                    ] }, key)) }),
+                    storageUsage.estimate?.usage != null && /* @__PURE__ */ u4("p", { class: "rr-settings-description", style: { marginTop: "0.5rem" }, children: [
+                      "Total disk (incl. IndexedDB):",
+                      " ",
+                      /* @__PURE__ */ u4("strong", { children: formatBytes(storageUsage.estimate.usage) }),
+                      storageUsage.estimate.quota ? /* @__PURE__ */ u4(S, { children: [
+                        " / ",
+                        formatBytes(storageUsage.estimate.quota)
+                      ] }) : null
+                    ] })
+                  ] }) : /* @__PURE__ */ u4("p", { class: "rr-settings-description", children: "Loading\u2026" }),
+                  /* @__PURE__ */ u4(
+                    "button",
+                    {
+                      class: "btn btn-sm btn-outline-warning",
+                      style: { marginTop: "0.5rem" },
+                      onClick: async () => {
+                        await log.clearLogs();
+                        logger13.info("Logs cleared");
+                        refreshStorageUsage();
+                      },
+                      children: "Clear logs"
+                    }
+                  )
+                ] }),
+                /* @__PURE__ */ u4("div", { class: "rr-settings-group", children: [
+                  /* @__PURE__ */ u4("div", { class: "rr-settings-label", children: "Debug" }),
+                  /* @__PURE__ */ u4("p", { class: "rr-settings-description", children: "Download logs for troubleshooting." }),
+                  /* @__PURE__ */ u4(
+                    "button",
+                    {
+                      class: "btn btn-sm btn-outline-secondary",
+                      style: { marginTop: "0.5rem" },
+                      onClick: handleDownloadLogs,
+                      children: "Download Logs"
+                    }
+                  )
+                ] })
+              ] }),
+              activeTab === "danger" && /* @__PURE__ */ u4("div", { class: "rr-settings-group rr-settings-danger", children: [
+                /* @__PURE__ */ u4("div", { class: "rr-settings-label", children: "Danger Zone" }),
+                /* @__PURE__ */ u4("p", { class: "rr-settings-description", children: "Clear all data including contacts, shoutouts, and archives. Cannot be undone." }),
                 /* @__PURE__ */ u4(
-                  "input",
+                  "button",
                   {
-                    type: "checkbox",
-                    checked: writersGuildEnabled,
-                    onChange: (e4) => setWritersGuildEnabled(e4.target.checked)
+                    class: "btn btn-sm btn-outline-danger",
+                    style: { marginTop: "0.5rem" },
+                    onClick: () => setShowClearConfirm(true),
+                    children: "Clear All Data"
                   }
                 ),
-                /* @__PURE__ */ u4("span", { children: "Enable Writers Guild Integration" })
-              ] }),
-              /* @__PURE__ */ u4("p", { class: "rr-settings-description", children: "Import shoutouts from rrwritersguild.com/shoutouts/dashboard" })
-            ] }),
-            /* @__PURE__ */ u4("div", { class: "rr-settings-group", children: [
-              /* @__PURE__ */ u4("div", { class: "rr-settings-label", children: "Debug" }),
-              /* @__PURE__ */ u4("p", { class: "rr-settings-description", children: "Download or clear logs for troubleshooting." }),
-              /* @__PURE__ */ u4(
-                "button",
-                {
-                  class: "btn btn-sm btn-outline-secondary",
-                  style: { marginTop: "0.5rem" },
-                  onClick: handleDownloadLogs,
-                  children: "Download Logs"
-                }
-              ),
-              /* @__PURE__ */ u4(
-                "button",
-                {
-                  class: "btn btn-sm btn-outline-secondary",
-                  style: { marginTop: "0.5rem", marginLeft: "0.5rem" },
-                  onClick: async () => {
-                    await log.clearLogs();
-                    logger13.info("Logs cleared");
-                  },
-                  children: "Clear Logs"
-                }
-              )
-            ] }),
-            /* @__PURE__ */ u4("div", { class: "rr-settings-group rr-settings-danger", children: [
-              /* @__PURE__ */ u4("div", { class: "rr-settings-label", children: "Danger Zone" }),
-              /* @__PURE__ */ u4("p", { class: "rr-settings-description", children: "Clear all data including contacts, shoutouts, and archives. Cannot be undone." }),
-              /* @__PURE__ */ u4(
-                "button",
-                {
-                  class: "btn btn-sm btn-outline-danger",
-                  style: { marginTop: "0.5rem" },
-                  onClick: () => setShowClearConfirm(true),
-                  children: "Clear All Data"
-                }
-              ),
-              /* @__PURE__ */ u4(
-                "button",
-                {
-                  class: "btn btn-sm btn-outline-danger",
-                  style: { marginTop: "0.5rem", marginLeft: "0.5rem" },
-                  onClick: () => setShowDeleteDbConfirm(true),
-                  children: "Delete Database"
-                }
-              )
+                /* @__PURE__ */ u4(
+                  "button",
+                  {
+                    class: "btn btn-sm btn-outline-danger",
+                    style: { marginTop: "0.5rem", marginLeft: "0.5rem" },
+                    onClick: () => setShowDeleteDbConfirm(true),
+                    children: "Delete Database"
+                  }
+                )
+              ] })
             ] })
           ] })
         }
@@ -38959,6 +39382,8 @@
     const [exporting, setExporting] = d3(false);
     const [importing, setImporting] = d3(false);
     const [importingGuild, setImportingGuild] = d3(false);
+    const [guildStatus, setGuildStatus] = d3("");
+    const [guildLog, setGuildLog] = d3([]);
     const [progress, setProgress] = d3(null);
     const [result, setResult] = d3(null);
     const [error, setError] = d3(null);
@@ -39097,36 +39522,50 @@
       setImportingGuild(true);
       setError(null);
       setResult(null);
-      const iframe = document.createElement("iframe");
-      iframe.src = "https://rrwritersguild.com/shoutouts/dashboard";
-      iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;";
-      document.body.appendChild(iframe);
-      const messageHandler = (message) => {
-        if (message.type === "guildImportResult") {
-          chrome.runtime.onMessage.removeListener(messageHandler);
-          setImportingGuild(false);
-          iframe.remove();
-          if (message.success) {
-            setResult({
-              type: "guild",
-              message: `Imported ${message.count} shoutouts from Writers Guild`,
-              details: { imported: message.count, duplicates: 0, skipped: 0, errors: [] }
-            });
-            onComplete?.();
-          } else {
-            setError(message.error || "Import failed");
-          }
+      setGuildStatus("Starting\u2026");
+      setGuildLog([{ ts: Date.now(), step: "Starting\u2026" }]);
+      const pushLog = (step) => {
+        setGuildStatus(step);
+        setGuildLog((log2) => [...log2, { ts: Date.now(), step }]);
+      };
+      const listener = (message) => {
+        if (message?.type === "rrwgImportProgress") {
+          pushLog(message.step || "\u2026");
         }
       };
-      chrome.runtime.onMessage.addListener(messageHandler);
-      setTimeout(() => {
-        chrome.runtime.onMessage.removeListener(messageHandler);
-        iframe.remove();
-        if (importingGuild) {
-          setImportingGuild(false);
-          setError("Import timed out. Make sure you are logged into Writers Guild.");
+      chrome.runtime.onMessage.addListener(listener);
+      chrome.runtime.sendMessage({ type: "importFromWritersGuild" }, (response) => {
+        chrome.runtime.onMessage.removeListener(listener);
+        setImportingGuild(false);
+        if (chrome.runtime.lastError) {
+          pushLog(`Error: ${chrome.runtime.lastError.message}`);
+          setError(chrome.runtime.lastError.message);
+          return;
         }
-      }, 3e4);
+        if (response?.needsAuth) {
+          pushLog("Not signed in to RRWG \u2014 opening sign-in tab.");
+          setError("Not signed in to Writers Guild. A tab is opening \u2014 sign in there, then click Import again.");
+          chrome.runtime.sendMessage({ type: "openTab", url: "https://rrwritersguild.com/shoutouts" });
+          return;
+        }
+        if (response?.success) {
+          pushLog(`Done \u2014 ${response.imported} imported, ${response.duplicates} duplicates, ${response.skipped} skipped.`);
+          setResult({
+            type: "guild",
+            message: `Imported ${response.imported} shoutouts from Writers Guild`,
+            details: {
+              imported: response.imported,
+              duplicates: response.duplicates,
+              skipped: response.skipped,
+              errors: response.errors || []
+            }
+          });
+          onComplete?.();
+        } else {
+          pushLog(`Error: ${response?.error || "Unknown"}`);
+          setError(response?.error || "Import failed");
+        }
+      });
     };
     const handleClose = () => {
       setResult(null);
@@ -39294,7 +39733,26 @@
                     " Import from Writers Guild"
                   ] })
                 }
-              )
+              ),
+              (importingGuild || guildLog.length > 0) && /* @__PURE__ */ u4("div", { class: "rr-guild-progress mt-2", children: [
+                importingGuild && guildStatus && /* @__PURE__ */ u4("div", { class: "rr-guild-status", children: [
+                  /* @__PURE__ */ u4("i", { class: "fa fa-circle-notch fa-spin" }),
+                  " ",
+                  guildStatus
+                ] }),
+                guildLog.length > 0 && /* @__PURE__ */ u4("details", { class: "rr-guild-log", children: [
+                  /* @__PURE__ */ u4("summary", { children: [
+                    "Log (",
+                    guildLog.length,
+                    ")"
+                  ] }),
+                  /* @__PURE__ */ u4("ul", { children: guildLog.map((entry, i5) => /* @__PURE__ */ u4("li", { children: [
+                    /* @__PURE__ */ u4("span", { class: "rr-guild-log-time", children: new Date(entry.ts).toLocaleTimeString() }),
+                    " ",
+                    entry.step
+                  ] }, i5)) })
+                ] })
+              ] })
             ] })
           ] }),
           /* @__PURE__ */ u4("hr", {}),
@@ -39560,17 +40018,20 @@
             contactId = await save("contacts", {
               authorName: data.authorName,
               profileUrl: data.profileUrl || "",
-              authorAvatar: data.authorAvatar || ""
+              authorAvatar: data.authorAvatar || "",
+              discordUsername: data.discordUsername || ""
             });
             logger16.info("Created new contact", { contactId, authorName: data.authorName });
           } else {
             contactId = contact.id;
-            const needsUpdate = data.profileUrl && !contact.profileUrl || data.authorAvatar && !contact.authorAvatar;
+            const newDiscord = data.discordUsername ?? contact.discordUsername ?? "";
+            const needsUpdate = data.profileUrl && !contact.profileUrl || data.authorAvatar && !contact.authorAvatar || newDiscord !== (contact.discordUsername || "");
             if (needsUpdate) {
               await save("contacts", {
                 ...contact,
                 profileUrl: data.profileUrl || contact.profileUrl,
-                authorAvatar: data.authorAvatar || contact.authorAvatar
+                authorAvatar: data.authorAvatar || contact.authorAvatar,
+                discordUsername: newDiscord
               });
             }
           }
@@ -39604,6 +40065,7 @@
           id: data.id,
           code: data.code,
           expectedReturnDate: data.expectedReturnDate || "",
+          notes: data.notes || "",
           schedules,
           // Cached parsed data
           fictionId: data.fictionId || "",
@@ -39625,6 +40087,47 @@
         await loadData();
       } catch (err) {
         logger16.error("Failed to save shoutout", err);
+      }
+    };
+    const handleSaveContactDiscord = async (authorName, discordUsername) => {
+      if (!authorName)
+        return;
+      try {
+        const existing = contacts.find((c4) => c4.authorName === authorName);
+        if (existing) {
+          if ((existing.discordUsername || "") === (discordUsername || ""))
+            return;
+          const updated = { ...existing, discordUsername: discordUsername || "" };
+          await save("contacts", updated);
+          setContacts((prev) => prev.map((c4) => c4.id === updated.id ? updated : c4));
+        } else {
+          const newContact = { authorName, discordUsername: discordUsername || "", profileUrl: "", authorAvatar: "" };
+          const id = await save("contacts", newContact);
+          setContacts((prev) => [...prev, { ...newContact, id }]);
+        }
+        logger16.info("Saved Discord username to contact", { authorName, discordUsername });
+      } catch (err) {
+        logger16.error("Failed to save contact Discord username", err);
+      }
+    };
+    const handleSaveScheduleField = async (shoutoutId, idx, fields) => {
+      if (!shoutoutId || idx == null || !fields)
+        return;
+      try {
+        const shoutout = shoutouts.find((s4) => s4.id === shoutoutId) || await getById("shoutouts", shoutoutId);
+        if (!shoutout)
+          return;
+        const newSchedules = [...shoutout.schedules || []];
+        if (!newSchedules[idx])
+          return;
+        newSchedules[idx] = { ...newSchedules[idx], ...fields };
+        const updated = { ...shoutout, schedules: newSchedules };
+        await save("shoutouts", updated);
+        setShoutouts((prev) => prev.map((s4) => s4.id === shoutoutId ? updated : s4));
+        setModalShoutout((prev) => prev?.id === shoutoutId ? updated : prev);
+        logger16.info("Saved schedule field", { shoutoutId, idx, fields });
+      } catch (err) {
+        logger16.error("Failed to save schedule field", err);
       }
     };
     const handleDelete = async (id) => {
@@ -40007,7 +40510,10 @@
           shoutout: modalShoutout,
           mode: modalMode,
           myFictions,
-          currentFictionId: filterFictionId
+          currentFictionId: filterFictionId,
+          contacts,
+          onSaveContactDiscord: handleSaveContactDiscord,
+          onSaveScheduleField: handleSaveScheduleField
         }
       ),
       /* @__PURE__ */ u4(
@@ -40146,6 +40652,7 @@
     const [todayShoutouts, setTodayShoutouts] = d3([]);
     const [allShoutouts, setAllShoutouts] = d3([]);
     const [myFictions, setMyFictions] = d3([]);
+    const [contacts, setContacts] = d3([]);
     const [loading, setLoading] = d3(true);
     const [insertingId, setInsertingId] = d3(null);
     const [copiedId, setCopiedId] = d3(null);
@@ -40197,12 +40704,14 @@
     }, [targetDate, fictionId]);
     const loadData = async () => {
       try {
-        const [shoutouts, fictions] = await Promise.all([
+        const [shoutouts, fictions, loadedContacts] = await Promise.all([
           getAll("shoutouts"),
-          getAll("myFictions")
+          getAll("myFictions"),
+          getAll("contacts")
         ]);
         setAllShoutouts(shoutouts || []);
         setMyFictions(fictions || []);
+        setContacts(loadedContacts || []);
         const publishDate = getPublishDate();
         setTargetDate(publishDate);
         const filtered = (shoutouts || []).filter((shoutout) => {
@@ -40703,7 +41212,47 @@
           shoutout: modalShoutout,
           mode: modalMode,
           myFictions,
-          currentFictionId: fictionId
+          currentFictionId: fictionId,
+          contacts,
+          onSaveScheduleField: async (shoutoutId, idx, fields) => {
+            if (!shoutoutId || idx == null || !fields)
+              return;
+            try {
+              const shoutout = allShoutouts.find((s4) => s4.id === shoutoutId) || await getById("shoutouts", shoutoutId);
+              if (!shoutout)
+                return;
+              const newSchedules = [...shoutout.schedules || []];
+              if (!newSchedules[idx])
+                return;
+              newSchedules[idx] = { ...newSchedules[idx], ...fields };
+              const updated = { ...shoutout, schedules: newSchedules };
+              await save("shoutouts", updated);
+              setAllShoutouts((prev) => prev.map((s4) => s4.id === shoutoutId ? updated : s4));
+              setModalShoutout((prev) => prev?.id === shoutoutId ? updated : prev);
+            } catch (err) {
+              logger17.error("Failed to save schedule field", err);
+            }
+          },
+          onSaveContactDiscord: async (authorName, discordUsername) => {
+            if (!authorName)
+              return;
+            try {
+              const existing = contacts.find((c4) => c4.authorName === authorName);
+              if (existing) {
+                if ((existing.discordUsername || "") === (discordUsername || ""))
+                  return;
+                const updated = { ...existing, discordUsername: discordUsername || "" };
+                await save("contacts", updated);
+                setContacts((prev) => prev.map((c4) => c4.id === updated.id ? updated : c4));
+              } else {
+                const fresh = { authorName, discordUsername: discordUsername || "", profileUrl: "", authorAvatar: "" };
+                const id = await save("contacts", fresh);
+                setContacts((prev) => [...prev, { ...fresh, id }]);
+              }
+            } catch (err) {
+              logger17.error("Failed to save contact Discord username", err);
+            }
+          }
         }
       )
     ] });
@@ -41556,17 +42105,16 @@
   max-width: 1100px;
 }
 
-/* Settings: wider than small, with its body constrained so long option
-   lists scroll instead of overflowing the viewport. */
+/* Settings: fixed width and height so the modal doesn't reflow when the
+   active tab changes content length. The body itself doesn't scroll \u2014 the
+   tab content pane (.rr-settings-form) handles its own overflow. */
 .rr-modal-settings {
-  width: 95%;
-  max-width: 600px;
-  max-height: 85vh;
+  width: 600px;
+  max-width: calc(100vw - 2rem);
 }
 
 .rr-modal-settings .rr-modal-body {
-  max-height: calc(85vh - 8rem); /* leave room for header + footer */
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 /* Header */
@@ -41783,12 +42331,19 @@
   // src/shout_out_swapper/ui/calendar/Calendar.css
   var Calendar_default = `/* Calendar - grid, days, view tabs, unscheduled, archive */
 
-/* Header */
+/* Header \u2014 3-column grid so the month title is centered relative to the
+   whole row (tabs on the left, title in the middle, action buttons on the right). */
 .rr-calendar-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 1rem;
   margin-bottom: 1rem;
+}
+
+.rr-view-tabs {
+  grid-column: 1;
+  justify-self: start;
 }
 
 /* View tabs - underline style like v1 */
@@ -41841,43 +42396,47 @@
   margin-right: 0.3rem;
 }
 
-/* Navigation */
+/* The nav is purely a JSX wrapper \u2014 make it transparent in layout so its
+   children (center + right) participate in the header grid directly. */
 .rr-calendar-nav {
-  display: flex;
-  align-items: center;
-  flex: 1;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  display: contents;
 }
 
 .rr-cal-nav-center {
+  grid-column: 2;
+  justify-self: center;
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin: 0 auto;
   min-width: 0;
 }
 
 .rr-cal-nav-right {
+  grid-column: 3;
+  justify-self: end;
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin-left: auto;
-  flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
-/* At narrow viewport widths the right-side buttons drop to their own row
-   so the month-year title and its arrows never get overlapped. */
+/* Narrow viewport \u2014 collapse to a single column and stack so the title isn't
+   squeezed between the tabs and the right-side buttons. */
 @media (max-width: 900px) {
+  .rr-calendar-header {
+    grid-template-columns: 1fr;
+  }
+  .rr-view-tabs {
+    grid-column: 1;
+    justify-self: center;
+  }
   .rr-cal-nav-center {
-    order: -1;
-    width: 100%;
-    margin: 0;
-    justify-content: center;
+    grid-column: 1;
+    justify-self: center;
   }
   .rr-cal-nav-right {
-    margin-left: auto;
-    margin-right: auto;
+    grid-column: 1;
+    justify-self: center;
   }
 }
 
@@ -42586,6 +43145,11 @@
   color: #fff;
 }
 
+.rr-archive-status-overlay.rr-swap-status-pending {
+  background: rgba(138, 99, 210, 0.9);
+  color: #fff;
+}
+
 .rr-archive-status-overlay i {
   font-size: 0.65em;
 }
@@ -42705,6 +43269,15 @@
   background: rgba(230, 126, 34, 0.08);
 }
 
+.rr-archive-schedule-line.rr-schedule-pending {
+  background: rgba(138, 99, 210, 0.1);
+}
+
+.rr-schedule-pending .rr-schedule-swap-state {
+  background: rgba(138, 99, 210, 0.25);
+  color: #b19cd9;
+}
+
 .rr-schedule-scheduled .rr-schedule-swap-state {
   background: rgba(230, 126, 34, 0.2);
   color: #e67e22;
@@ -42721,6 +43294,20 @@
 .rr-schedule-our-fiction i {
   margin-right: 0.25rem;
   color: rgba(128, 128, 128, 0.7);
+}
+
+.rr-archive-shoutout-notes {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: rgba(128, 128, 128, 0.9);
+  font-style: italic;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.rr-archive-shoutout-notes i {
+  margin-right: 0.25rem;
+  opacity: 0.7;
 }
 
 .rr-schedule-our-date {
@@ -42797,6 +43384,10 @@
 
 .rr-swap-status-shouted {
   color: #17a2b8;
+}
+
+.rr-swap-status-pending {
+  color: #b19cd9;
 }
 
 .rr-swap-status-scheduled {
@@ -43303,16 +43894,1244 @@
   var ContactModal_default = "/* Contact Modal - matches v1's contact modal styles */\n\n.rr-contact-modal-content {\n  display: flex;\n  flex-direction: column;\n  gap: 1.25rem;\n}\n\n.rr-contact-modal-header {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  text-align: center;\n  gap: 0.5rem;\n}\n\n.rr-contact-modal-avatar {\n  width: 72px;\n  height: 72px;\n  border-radius: 50%;\n  object-fit: cover;\n}\n\n.rr-contact-modal-avatar.rr-contact-avatar-placeholder {\n  background: rgba(128, 128, 128, 0.2);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 1.8rem;\n  font-weight: 600;\n}\n\n.rr-contact-modal-name {\n  font-size: 1.1rem;\n  font-weight: 600;\n}\n\n.rr-contact-modal-links {\n  display: flex;\n  gap: 0.5rem;\n  justify-content: center;\n}\n\n.rr-contact-modal-links .btn {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 0.4rem;\n}\n\n/* Loading state */\n.rr-contact-loading {\n  padding: 1rem;\n  text-align: center;\n  opacity: 0.6;\n}\n\n/* Fiction section */\n.rr-contact-fiction-section {\n  padding-top: 0.75rem;\n  border-top: 1px solid rgba(128, 128, 128, 0.15);\n}\n\n.rr-section-label {\n  display: block;\n  font-size: 0.75rem;\n  font-weight: 600;\n  text-transform: uppercase;\n  opacity: 0.6;\n  margin-bottom: 0.5rem;\n}\n\n.rr-contact-fiction-card {\n  display: flex;\n  align-items: center;\n  gap: 0.75rem;\n  padding: 0.5rem;\n  border: 1px solid rgba(128, 128, 128, 0.2);\n  border-radius: 6px;\n  text-decoration: none;\n  color: inherit;\n  transition: background 0.2s;\n}\n\n.rr-contact-fiction-card:hover {\n  background: rgba(128, 128, 128, 0.1);\n  text-decoration: none;\n  color: inherit;\n}\n\n.rr-contact-fiction-card + .rr-contact-fiction-card {\n  margin-top: 0.5rem;\n}\n\n.rr-fiction-cover {\n  width: 40px;\n  height: 60px;\n  object-fit: cover;\n  border-radius: 4px;\n  flex-shrink: 0;\n}\n\n.rr-fiction-cover.rr-fiction-cover-placeholder {\n  background: rgba(128, 128, 128, 0.2);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 1.2rem;\n  font-weight: 600;\n  color: rgba(128, 128, 128, 0.6);\n}\n\n.rr-fiction-info {\n  flex: 1;\n  min-width: 0;\n}\n\n.rr-fiction-title {\n  font-size: 0.9rem;\n  font-weight: 500;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.rr-fiction-stats {\n  display: flex;\n  gap: 0.75rem;\n  margin-top: 0.25rem;\n}\n\n.rr-fiction-stat {\n  font-size: 0.7rem;\n  display: flex;\n  align-items: center;\n  gap: 0.25rem;\n}\n\n.rr-fiction-stat.rr-stat-archived {\n  color: #28a745;\n}\n\n.rr-fiction-stat.rr-stat-pending {\n  color: #e67e22;\n}\n\n.rr-fiction-dates {\n  font-size: 0.7rem;\n  opacity: 0.6;\n  margin-top: 0.15rem;\n}\n\n.rr-fiction-date {\n  font-size: 0.75rem;\n  opacity: 0.7;\n  margin-top: 0.15rem;\n}\n\n/* Contact methods (discord, email) */\n.rr-contact-methods {\n  display: flex;\n  flex-direction: column;\n  gap: 0.75rem;\n  padding-top: 1rem;\n  border-top: 1px solid rgba(128, 128, 128, 0.15);\n}\n\n.rr-contact-method {\n  display: flex;\n  align-items: center;\n  gap: 0.75rem;\n}\n\n.rr-method-icon {\n  width: 24px;\n  text-align: center;\n  font-size: 1.1rem;\n}\n\n.rr-method-icon.fa-discord {\n  color: #5865F2;\n}\n\n.rr-method-icon.fa-envelope {\n  color: #ea4335;\n}\n\n.rr-contact-method input {\n  flex: 1;\n  padding: 0.5rem 0.75rem;\n  font-size: 0.9rem;\n  border: 1px solid rgba(128, 128, 128, 0.3);\n  border-radius: 4px;\n  background: transparent;\n  color: inherit;\n}\n\n.rr-discord-fields {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  flex: 1;\n}\n\n.rr-contact-value {\n  flex: 1;\n  font-size: 0.9rem;\n}\n\n.rr-contact-value a {\n  color: #337ab7;\n  text-decoration: none;\n}\n\n.rr-contact-value a:hover {\n  text-decoration: underline;\n}\n\n.rr-discord-link {\n  color: #5865F2;\n}\n\n.rr-contact-empty-value {\n  opacity: 0.4;\n  font-style: italic;\n}\n";
 
   // src/shout_out_swapper/ui/modal/ShoutoutModal.css
-  var ShoutoutModal_default = "/* Shoutout Modal Styles - matches v1 */\n\n/* Override base modal for shoutout xlarge */\n.rr-modal.rr-modal-xlarge {\n  width: auto;\n  min-width: 400px;\n  max-width: min(95vw, 850px);\n  max-height: 90vh;\n}\n\n.rr-modal.rr-modal-xlarge .rr-modal-body {\n  overflow: auto;\n}\n\n/* Modal date header */\n.rr-modal-date {\n  font-weight: 500;\n  margin-bottom: 1rem;\n  font-size: 1.1rem;\n}\n\n/* Edit mode layout - Code LEFT, Author RIGHT */\n.rr-modal-edit-layout {\n  display: flex;\n  gap: 1.5rem;\n  flex-wrap: wrap;\n}\n\n.rr-modal-edit-code {\n  flex: 1 1 300px;\n  display: flex;\n  flex-direction: column;\n  min-width: 0;\n  max-width: 100%;\n}\n\n/* Fixed height for textarea, auto for preview */\n.rr-textarea-wrapper {\n  height: 150px;\n  min-height: 150px;\n  max-height: 150px;\n}\n\n.rr-modal-preview-container {\n  margin-top: 0.5rem;\n  margin-bottom: 1rem;\n  padding: 1rem;\n  border: 1px solid rgba(128, 128, 128, 0.2);\n  border-radius: 8px;\n  max-height: 300px;\n  overflow-y: auto;\n}\n\n.rr-modal-code-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  margin-bottom: 0.5rem;\n}\n\n.rr-modal-code-header .rr-modal-label {\n  margin-bottom: 0;\n}\n\n.rr-modal-code-buttons {\n  display: flex;\n  gap: 0.5rem;\n}\n\n/* Toggle button badges */\n.rr-modal-code-toggles {\n  display: flex;\n  gap: 0.25rem;\n}\n\n.rr-toggle-btn {\n  width: 28px;\n  height: 28px;\n  padding: 0;\n  border: 1px solid rgba(128, 128, 128, 0.3);\n  border-radius: 4px;\n  background: transparent;\n  color: rgba(128, 128, 128, 0.6);\n  cursor: pointer;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 0.85rem;\n  transition: all 0.15s;\n}\n\n.rr-toggle-btn:hover {\n  background: rgba(128, 128, 128, 0.1);\n  color: inherit;\n}\n\n.rr-toggle-btn.active {\n  background: #337ab7;\n  border-color: #337ab7;\n  color: #fff;\n}\n\n/* Textarea with line numbers - matches v1 */\n.rr-textarea-wrapper {\n  display: flex;\n  border: 1px solid rgba(128, 128, 128, 0.3);\n  border-radius: 4px;\n  overflow: hidden;\n}\n\n.rr-line-numbers {\n  background: rgba(128, 128, 128, 0.1);\n  padding: 0.5rem;\n  font-family: monospace;\n  font-size: 0.85rem;\n  line-height: 1.5;\n  color: rgba(128, 128, 128, 0.7);\n  text-align: right;\n  user-select: none;\n  min-width: 40px;\n  min-height: 150px;\n  max-height: 150px;\n  overflow: hidden;\n}\n\n.rr-line-numbers div {\n  height: 1.5em;\n}\n\n.rr-modal-textarea {\n  min-height: 150px;\n  max-height: 150px;\n  flex: 1;\n  resize: none;\n  font-family: monospace;\n  font-size: 0.85rem;\n  line-height: 1.5;\n  border: none;\n  border-radius: 0;\n  padding: 0.5rem;\n  background: transparent;\n}\n\n.rr-modal-textarea:focus {\n  outline: none;\n  box-shadow: none;\n}\n\n/* Preview content */\n.rr-modal-preview {\n  min-height: 100px;\n}\n\n/* Author panel */\n.rr-modal-author-panel {\n  flex: 0 1 auto;\n  width: clamp(180px, 35%, 280px);\n  min-width: 180px;\n  border: 1px solid rgba(128, 128, 128, 0.2);\n  border-radius: 8px;\n  min-height: 150px;\n  display: flex;\n  flex-direction: column;\n  overflow: hidden;\n}\n\n.rr-author-empty {\n  flex: 1;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  color: rgba(128, 128, 128, 0.5);\n  text-align: center;\n  padding: 1rem;\n}\n\n.rr-author-card {\n  padding: 1rem;\n}\n\n.rr-author-cover {\n  width: 100%;\n  max-width: 150px;\n  height: auto;\n  border-radius: 4px;\n  margin-bottom: 0.75rem;\n}\n\n.rr-author-info {\n  display: flex;\n  flex-direction: column;\n  gap: 0.25rem;\n}\n\n.rr-author-fiction {\n  font-weight: 600;\n  font-size: 0.95rem;\n}\n\n.rr-author-name {\n  font-size: 0.85rem;\n  color: rgba(128, 128, 128, 0.7);\n}\n\n.rr-author-name a {\n  color: inherit;\n  text-decoration: underline;\n}\n\n.rr-author-name a:hover {\n  color: #fff;\n}\n\n/* Large author card for modal */\n.rr-author-card-large {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  text-align: center;\n  padding: clamp(0.75rem, 3vw, 1.5rem);\n  gap: 0.5rem;\n}\n\n.rr-author-cover-large {\n  width: clamp(80px, 50%, 120px);\n  height: auto;\n  aspect-ratio: 120 / 170;\n  object-fit: cover;\n  border-radius: 6px;\n  margin-bottom: 0.5rem;\n}\n\n.rr-author-fiction-large {\n  font-weight: 600;\n  font-size: clamp(0.9rem, 2.5vw, 1.1rem);\n  word-break: break-word;\n}\n\n.rr-view-fiction-btn {\n  margin-top: 0.75rem;\n}\n\n/* Scheduled for section in author panel */\n.rr-scheduled-for-section {\n  margin-top: 1rem;\n  padding-top: 1rem;\n  border-top: 1px solid rgba(128, 128, 128, 0.2);\n  text-align: left;\n  width: 100%;\n}\n\n.rr-scheduled-for-label {\n  font-size: 0.75rem;\n  font-weight: 600;\n  text-transform: uppercase;\n  color: rgba(128, 128, 128, 0.7);\n  margin-bottom: 0.5rem;\n}\n\n.rr-scheduled-for-list {\n  display: flex;\n  flex-direction: column;\n  gap: 0.35rem;\n}\n\n.rr-scheduled-for-item {\n  display: flex;\n  align-items: center;\n  flex-wrap: wrap;\n  gap: 0.25rem 0.5rem;\n  padding: 0.35rem 0.5rem;\n  background: rgba(51, 122, 183, 0.1);\n  border-radius: 4px;\n  font-size: clamp(0.7rem, 2vw, 0.8rem);\n}\n\n.rr-scheduled-for-item.rr-archived {\n  background: rgba(40, 167, 69, 0.1);\n}\n\n.rr-scheduled-fiction-title {\n  font-weight: 500;\n  flex: 1 1 100%;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.rr-scheduled-date {\n  color: rgba(128, 128, 128, 0.7);\n  font-size: 0.75rem;\n  flex-shrink: 0;\n}\n\n.rr-scheduled-date.rr-unscheduled {\n  color: #ffc107;\n  font-style: italic;\n}\n\n.rr-archived-icon {\n  color: #28a745;\n  flex-shrink: 0;\n}\n\n/* Per-schedule swap pill (inline inside rr-scheduled-for-item) */\n.rr-swap-pill {\n  display: inline-flex;\n  align-items: center;\n  padding: 0.1rem 0.4rem;\n  border-radius: 3px;\n  font-size: 0.6rem;\n  font-weight: 700;\n  text-transform: uppercase;\n  letter-spacing: 0.5px;\n  line-height: 1.4;\n  flex-shrink: 0;\n  text-decoration: none;\n}\n\n.rr-swap-pill:hover {\n  text-decoration: none;\n}\n\n.rr-swap-pill.rr-swap-badge-clickable:hover {\n  filter: brightness(1.2);\n  transform: scale(1.05);\n}\n\n/* Expected date row */\n.rr-expected-date-row {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n}\n\n.rr-expected-date-row .rr-modal-label {\n  margin-bottom: 0;\n  white-space: nowrap;\n}\n\n/* Schedules section */\n.rr-schedules-section {\n  margin-top: 1rem;\n}\n\n.rr-schedules-list {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 0.5rem;\n  margin-top: 0.5rem;\n  align-items: center;\n}\n\n.rr-schedule-tag {\n  display: inline-flex;\n  align-items: center;\n  gap: 0.5rem;\n  padding: 0.35rem 0.5rem 0.35rem 0.75rem;\n  background: rgba(128, 128, 128, 0.1);\n  border: 1px solid rgba(128, 128, 128, 0.15);\n  border-radius: 4px;\n  font-size: 0.85rem;\n}\n\n.rr-schedule-fiction {\n  font-weight: 500;\n}\n\n.rr-schedule-date {\n  color: rgba(128, 128, 128, 0.7);\n}\n\n.rr-schedule-date-input {\n  background: rgba(128, 128, 128, 0.1);\n  border: 1px solid rgba(128, 128, 128, 0.2);\n  border-radius: 3px;\n  color: inherit;\n  font-size: 0.8rem;\n  padding: 0.15rem 0.35rem;\n  cursor: pointer;\n}\n\n.rr-schedule-date-input:hover {\n  border-color: rgba(128, 128, 128, 0.4);\n}\n\n.rr-schedule-date-input:focus {\n  outline: none;\n  border-color: #337ab7;\n}\n\n.rr-schedule-tag.rr-schedule-archived {\n  background: rgba(40, 167, 69, 0.1);\n  border-color: rgba(40, 167, 69, 0.2);\n}\n\n.rr-schedule-archived-icon {\n  color: #28a745;\n  font-size: 0.75rem;\n}\n\n.rr-schedule-remove {\n  background: transparent;\n  border: none;\n  color: rgba(128, 128, 128, 0.5);\n  cursor: pointer;\n  padding: 0 0.25rem;\n  font-size: 1.1rem;\n  line-height: 1;\n}\n\n.rr-schedule-remove:hover {\n  color: #dc3545;\n}\n\n.rr-schedule-add {\n  display: flex;\n  gap: 0.5rem;\n  margin-top: 0.5rem;\n  align-items: center;\n}\n\n.rr-schedule-show-add-btn {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 28px;\n  height: 28px;\n  background: transparent;\n  border: 1px dashed rgba(128, 128, 128, 0.3);\n  border-radius: 4px;\n  color: rgba(128, 128, 128, 0.5);\n  cursor: pointer;\n  font-size: 1.2rem;\n  transition: all 0.15s;\n}\n\n.rr-schedule-show-add-btn:hover {\n  border-color: rgba(128, 128, 128, 0.5);\n  color: inherit;\n}\n\n.rr-no-schedules {\n  color: rgba(128, 128, 128, 0.5);\n  font-size: 0.85rem;\n  font-style: italic;\n}\n\n/* My Code fields */\n.rr-mycode-fields {\n  margin-top: 1rem;\n  display: flex;\n  flex-direction: column;\n  gap: 0.75rem;\n}\n\n.rr-mycode-name-field {\n  opacity: 0.7;\n}\n\n.rr-optional-label {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n}\n\n.rr-optional-hint {\n  font-weight: 400;\n  font-size: 0.7rem;\n  opacity: 0.6;\n}\n\n/* Button alignment helper */\n.me-auto {\n  margin-right: auto;\n}\n\n/* View Mode Styles */\n.rr-shoutout-view {\n  display: flex;\n  flex-direction: column;\n  gap: 1.5rem;\n}\n\n.rr-view-header {\n  display: flex;\n  gap: 1rem;\n}\n\n.rr-view-cover {\n  width: 100px;\n  height: 140px;\n  flex-shrink: 0;\n  border-radius: 4px;\n  overflow: hidden;\n  background: rgba(128, 128, 128, 0.1);\n}\n\n.rr-view-cover img {\n  width: 100%;\n  height: 100%;\n  object-fit: cover;\n}\n\n.rr-view-cover-placeholder {\n  width: 100%;\n  height: 100%;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 2rem;\n  color: rgba(128, 128, 128, 0.3);\n}\n\n.rr-view-info {\n  display: flex;\n  flex-direction: column;\n  gap: 0.25rem;\n}\n\n.rr-view-title {\n  font-weight: 600;\n  font-size: 1.2rem;\n}\n\n.rr-view-author {\n  color: rgba(128, 128, 128, 0.7);\n}\n\n.rr-view-link {\n  margin-top: 0.5rem;\n  color: #337ab7;\n  text-decoration: none;\n}\n\n.rr-view-link:hover {\n  text-decoration: underline;\n}\n\n.rr-view-details {\n  display: flex;\n  flex-direction: column;\n  gap: 0.75rem;\n}\n\n.rr-view-row {\n  display: flex;\n  align-items: center;\n  gap: 0.75rem;\n}\n\n.rr-view-row .rr-label {\n  font-weight: 500;\n  min-width: 120px;\n  color: rgba(128, 128, 128, 0.7);\n}\n\n.rr-view-code {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n}\n\n.rr-view-code .rr-label {\n  font-weight: 500;\n  color: rgba(128, 128, 128, 0.7);\n}\n\n.rr-code-preview {\n  padding: 1rem;\n  border: 1px solid rgba(128, 128, 128, 0.2);\n  border-radius: 8px;\n  max-height: 300px;\n  overflow-y: auto;\n}\n\n/* Go to Chapter button */\n.rr-goto-chapter-btn {\n  margin-top: 1rem;\n}\n\n.rr-goto-chapter-btn i {\n  margin-right: 0.25rem;\n}\n\n/* Swap Section in Author Panel */\n.rr-swap-section {\n  margin-top: 1rem;\n  padding-top: 1rem;\n  border-top: 1px solid rgba(128, 128, 128, 0.2);\n  text-align: center;\n}\n\n.rr-swap-badge {\n  display: inline-block;\n  padding: 0.25rem 0.5rem;\n  border-radius: 4px;\n  font-size: clamp(0.65rem, 2vw, 0.75rem);\n  font-weight: 600;\n  text-transform: uppercase;\n  letter-spacing: 0.5px;\n}\n\n/* We posted their shoutout (green) */\n.rr-swap-badge-swapped {\n  background: rgba(40, 167, 69, 0.2);\n  color: #28a745;\n  border: 1px solid #28a745;\n}\n\n/* Both posted - swap complete (cyan) */\n.rr-swap-badge-returned {\n  background: rgba(23, 162, 184, 0.2);\n  color: #17a2b8;\n  border: 1px solid #17a2b8;\n}\n\n/* We posted, scanned, they didn't return (red) */\n.rr-swap-badge-not-found {\n  background: rgba(220, 53, 69, 0.2);\n  color: #dc3545;\n  border: 1px solid #dc3545;\n}\n\n/* They shouted us first (cyan) */\n.rr-swap-badge-shouted {\n  background: rgba(23, 162, 184, 0.2);\n  color: #17a2b8;\n  border: 1px solid #17a2b8;\n}\n\n/* Scheduled but not posted yet (orange) */\n.rr-swap-badge-scheduled {\n  background: rgba(230, 126, 34, 0.2);\n  color: #e67e22;\n  border: 1px solid #e67e22;\n}\n\n/* We posted but haven't scanned their chapters yet (grey) */\n.rr-swap-badge-not-scanned {\n  background: rgba(128, 128, 128, 0.2);\n  color: rgba(200, 200, 200, 0.9);\n  border: 1px solid rgba(128, 128, 128, 0.5);\n}\n\n.rr-swap-badge-clickable {\n  cursor: pointer;\n  transition: all 0.15s;\n}\n\n.rr-swap-badge-clickable:hover {\n  background: rgba(255, 193, 7, 0.4);\n  transform: scale(1.05);\n}\n\n.rr-swap-badge-checking {\n  background: rgba(23, 162, 184, 0.2);\n  color: #17a2b8;\n  border: 1px solid #17a2b8;\n}\n\n.rr-swap-badge-checking i {\n  margin-right: 0.25rem;\n}\n\n.rr-swap-checking {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 0.5rem;\n  width: 100%;\n  padding: 0 1rem;\n}\n\n.rr-swap-progress-bar {\n  width: 100%;\n  height: 6px;\n  background: rgba(128, 128, 128, 0.2);\n  border-radius: 3px;\n  overflow: hidden;\n}\n\n.rr-swap-progress-fill {\n  height: 100%;\n  background: #17a2b8;\n  border-radius: 3px;\n  transition: width 0.3s ease;\n}\n\n.rr-swap-progress-text {\n  font-size: 0.75rem;\n  color: rgba(128, 128, 128, 0.9);\n}\n\n.rr-swap-progress-chapter {\n  font-size: 0.7rem;\n  color: rgba(128, 128, 128, 0.6);\n  max-width: 100%;\n  text-align: center;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.rr-swap-last-scan {\n  font-size: 0.75rem;\n  color: rgba(128, 128, 128, 0.7);\n  margin-top: 0.5rem;\n}\n\n.rr-check-swap-btn {\n  margin-top: 0.5rem;\n}\n\n/* Swap Found Info */\n.rr-swap-found {\n  margin-top: 1rem;\n  padding: clamp(0.5rem, 2vw, 0.75rem);\n  background: rgba(40, 167, 69, 0.1);\n  border-radius: 6px;\n  border: 1px solid rgba(40, 167, 69, 0.3);\n  word-break: break-word;\n}\n\n.rr-swap-found-label {\n  font-size: clamp(0.75rem, 2vw, 0.85rem);\n  color: #28a745;\n}\n\n.rr-swap-found-label i {\n  margin-right: 0.25rem;\n}\n\n.rr-swap-view-link {\n  display: inline-flex;\n  align-items: center;\n  gap: 0.25rem;\n  margin-top: 0.5rem;\n  color: #337ab7;\n  text-decoration: none;\n  font-size: 0.85rem;\n}\n\n.rr-swap-view-link:hover {\n  text-decoration: underline;\n}\n\n/* Swap Result (error only now) */\n.rr-swap-result {\n  padding: 0.5rem 0.75rem;\n  border-radius: 4px;\n  font-size: 0.85rem;\n  margin-top: 0.5rem;\n}\n\n.rr-swap-result.rr-swap-not-found {\n  background: rgba(220, 53, 69, 0.1);\n  color: #dc3545;\n}\n\n.rr-swap-result i {\n  margin-right: 0.25rem;\n}\n\n/* Responsive */\n@media (max-width: 768px) {\n  .rr-modal.rr-modal-xlarge {\n    min-width: unset;\n    width: 95vw;\n  }\n  .rr-modal-edit-layout {\n    flex-direction: column;\n  }\n  .rr-modal-author-panel {\n    width: 100%;\n    max-width: 100%;\n  }\n  .rr-author-card-large {\n    flex-direction: row;\n    flex-wrap: wrap;\n    justify-content: center;\n    gap: 1rem;\n  }\n  .rr-author-cover-large {\n    width: 80px;\n    flex-shrink: 0;\n  }\n  .rr-scheduled-for-section {\n    width: 100%;\n  }\n  .rr-swap-section {\n    width: 100%;\n  }\n}\n\n@media (max-width: 600px) {\n  .rr-modal-preview-container {\n    max-height: 200px;\n  }\n  .rr-author-card-large {\n    flex-direction: column;\n  }\n}\n";
+  var ShoutoutModal_default = `/* Shoutout Modal Styles - matches v1 */
+
+/* Override base modal for shoutout xlarge */
+.rr-modal.rr-modal-xlarge {
+  width: auto;
+  min-width: 400px;
+  max-width: min(95vw, 850px);
+  max-height: 90vh;
+}
+
+.rr-modal.rr-modal-xlarge .rr-modal-body {
+  overflow: auto;
+}
+
+/* Modal date header */
+.rr-modal-date {
+  font-weight: 500;
+  margin-bottom: 1rem;
+  font-size: 1.1rem;
+}
+
+/* Edit mode layout - Code LEFT, Author RIGHT */
+.rr-modal-edit-layout {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.rr-modal-edit-code {
+  flex: 1 1 300px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Fixed height for textarea, auto for preview */
+.rr-textarea-wrapper {
+  height: 150px;
+  min-height: 150px;
+  max-height: 150px;
+}
+
+.rr-modal-preview-container {
+  margin-top: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.rr-modal-code-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.rr-modal-code-header .rr-modal-label {
+  margin-bottom: 0;
+}
+
+.rr-modal-code-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Toggle button badges */
+.rr-modal-code-toggles {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.rr-toggle-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 4px;
+  background: transparent;
+  color: rgba(128, 128, 128, 0.6);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  transition: all 0.15s;
+}
+
+.rr-toggle-btn:hover {
+  background: rgba(128, 128, 128, 0.1);
+  color: inherit;
+}
+
+.rr-toggle-btn.active {
+  background: #337ab7;
+  border-color: #337ab7;
+  color: #fff;
+}
+
+/* Textarea with line numbers - matches v1 */
+.rr-textarea-wrapper {
+  display: flex;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.rr-line-numbers {
+  background: rgba(128, 128, 128, 0.1);
+  padding: 0.5rem;
+  font-family: monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: rgba(128, 128, 128, 0.7);
+  text-align: right;
+  user-select: none;
+  min-width: 40px;
+  min-height: 150px;
+  max-height: 150px;
+  overflow: hidden;
+}
+
+.rr-line-numbers div {
+  height: 1.5em;
+}
+
+.rr-modal-textarea {
+  min-height: 150px;
+  max-height: 150px;
+  flex: 1;
+  resize: none;
+  font-family: monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  border: none;
+  border-radius: 0;
+  padding: 0.5rem;
+  background: transparent;
+}
+
+.rr-modal-textarea:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Preview content */
+.rr-modal-preview {
+  min-height: 100px;
+}
+
+/* Author panel */
+.rr-modal-author-panel {
+  flex: 0 1 auto;
+  width: clamp(180px, 35%, 280px);
+  min-width: 180px;
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 8px;
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.rr-author-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(128, 128, 128, 0.5);
+  text-align: center;
+  padding: 1rem;
+}
+
+.rr-author-card {
+  padding: 1rem;
+}
+
+.rr-author-cover {
+  width: 100%;
+  max-width: 150px;
+  height: auto;
+  border-radius: 4px;
+  margin-bottom: 0.75rem;
+}
+
+.rr-author-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.rr-author-fiction {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.rr-author-name {
+  font-size: 0.85rem;
+  color: rgba(128, 128, 128, 0.7);
+}
+
+.rr-author-name a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.rr-author-name a:hover {
+  color: #fff;
+}
+
+/* Large author card for modal */
+.rr-author-card-large {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: clamp(0.75rem, 3vw, 1.5rem);
+  gap: 0.5rem;
+}
+
+.rr-author-cover-large {
+  width: clamp(80px, 50%, 120px);
+  height: auto;
+  aspect-ratio: 120 / 170;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+
+.rr-author-fiction-large {
+  font-weight: 600;
+  font-size: clamp(0.9rem, 2.5vw, 1.1rem);
+  word-break: break-word;
+}
+
+.rr-view-fiction-btn {
+  margin-top: 0.75rem;
+}
+
+/* Discord username row \u2014 small Discord-coloured icon on the left, plain
+   form-control input in the middle, copy button on the right. No chip. */
+.rr-discord-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.rr-discord-row-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: #5865f2;
+}
+
+.rr-discord-row-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.rr-discord-row-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
+.rr-discord-row-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 4px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.rr-discord-row-btn:hover {
+  background: rgba(128, 128, 128, 0.1);
+  border-color: rgba(128, 128, 128, 0.4);
+}
+
+.rr-discord-row-confirm {
+  border-color: rgba(40, 167, 69, 0.5);
+  color: #28a745;
+}
+
+.rr-discord-row-confirm:hover {
+  background: rgba(40, 167, 69, 0.12);
+  border-color: rgba(40, 167, 69, 0.7);
+}
+
+.rr-discord-row-saved {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #28a745;
+  background: rgba(40, 167, 69, 0.12);
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+}
+
+/* Scheduled for section in author panel */
+.rr-scheduled-for-section {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
+  text-align: left;
+  width: 100%;
+}
+
+.rr-scheduled-for-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: rgba(128, 128, 128, 0.7);
+  margin-bottom: 0.5rem;
+}
+
+.rr-scheduled-for-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.rr-scheduled-for-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  padding: 0.35rem 0.5rem;
+  background: rgba(51, 122, 183, 0.1);
+  border-radius: 4px;
+  font-size: clamp(0.7rem, 2vw, 0.8rem);
+}
+
+.rr-scheduled-for-item.rr-archived {
+  background: rgba(40, 167, 69, 0.1);
+}
+
+.rr-scheduled-fiction-title {
+  font-weight: 500;
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rr-scheduled-date {
+  color: rgba(128, 128, 128, 0.7);
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.rr-scheduled-date.rr-unscheduled {
+  color: #ffc107;
+  font-style: italic;
+}
+
+.rr-archived-icon {
+  color: #28a745;
+  flex-shrink: 0;
+}
+
+/* Per-schedule swap pill (inline inside rr-scheduled-for-item) */
+.rr-swap-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  line-height: 1.4;
+  flex-shrink: 0;
+  text-decoration: none;
+}
+
+.rr-swap-pill:hover {
+  text-decoration: none;
+}
+
+.rr-swap-pill.rr-swap-badge-clickable:hover {
+  filter: brightness(1.2);
+  transform: scale(1.05);
+}
+
+/* Expected date row */
+.rr-expected-date-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.rr-expected-date-row .rr-modal-label {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
+/* Schedules section */
+.rr-schedules-section {
+  margin-top: 1rem;
+}
+
+.rr-schedules-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  align-items: center;
+}
+
+.rr-notes-section {
+  margin-top: 1rem;
+}
+
+.rr-notes-textarea {
+  margin-top: 0.35rem;
+  resize: vertical;
+  min-height: 4rem;
+}
+
+.rr-schedule-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem 0.35rem 0.75rem;
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid rgba(128, 128, 128, 0.15);
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.rr-schedule-fiction {
+  font-weight: 500;
+}
+
+.rr-schedule-date {
+  color: rgba(128, 128, 128, 0.7);
+}
+
+.rr-schedule-date-input {
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 3px;
+  color: inherit;
+  font-size: 0.8rem;
+  padding: 0.15rem 0.35rem;
+  cursor: pointer;
+}
+
+.rr-schedule-date-input:hover {
+  border-color: rgba(128, 128, 128, 0.4);
+}
+
+.rr-schedule-date-input:focus {
+  outline: none;
+  border-color: #337ab7;
+}
+
+.rr-schedule-tag.rr-schedule-archived {
+  background: rgba(40, 167, 69, 0.1);
+  border-color: rgba(40, 167, 69, 0.2);
+}
+
+.rr-schedule-archived-icon {
+  color: #28a745;
+  font-size: 0.75rem;
+}
+
+.rr-schedule-remove {
+  background: transparent;
+  border: none;
+  color: rgba(128, 128, 128, 0.5);
+  cursor: pointer;
+  padding: 0 0.25rem;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.rr-schedule-remove:hover {
+  color: #dc3545;
+}
+
+.rr-schedule-add {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  align-items: center;
+}
+
+.rr-schedule-show-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: 1px dashed rgba(128, 128, 128, 0.3);
+  border-radius: 4px;
+  color: rgba(128, 128, 128, 0.5);
+  cursor: pointer;
+  font-size: 1.2rem;
+  transition: all 0.15s;
+}
+
+.rr-schedule-show-add-btn:hover {
+  border-color: rgba(128, 128, 128, 0.5);
+  color: inherit;
+}
+
+.rr-no-schedules {
+  color: rgba(128, 128, 128, 0.5);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+/* My Code fields */
+.rr-mycode-fields {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.rr-mycode-name-field {
+  opacity: 0.7;
+}
+
+.rr-optional-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.rr-optional-hint {
+  font-weight: 400;
+  font-size: 0.7rem;
+  opacity: 0.6;
+}
+
+/* Button alignment helper */
+.me-auto {
+  margin-right: auto;
+}
+
+/* View Mode Styles */
+.rr-shoutout-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.rr-view-header {
+  display: flex;
+  gap: 1rem;
+}
+
+.rr-view-cover {
+  width: 100px;
+  height: 140px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.rr-view-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.rr-view-cover-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  color: rgba(128, 128, 128, 0.3);
+}
+
+.rr-view-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.rr-view-title {
+  font-weight: 600;
+  font-size: 1.2rem;
+}
+
+.rr-view-author {
+  color: rgba(128, 128, 128, 0.7);
+}
+
+.rr-view-link {
+  margin-top: 0.5rem;
+  color: #337ab7;
+  text-decoration: none;
+}
+
+.rr-view-link:hover {
+  text-decoration: underline;
+}
+
+.rr-view-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.rr-view-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.rr-view-row .rr-label {
+  font-weight: 500;
+  min-width: 120px;
+  color: rgba(128, 128, 128, 0.7);
+}
+
+.rr-view-code {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.rr-view-code .rr-label {
+  font-weight: 500;
+  color: rgba(128, 128, 128, 0.7);
+}
+
+.rr-code-preview {
+  padding: 1rem;
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* Go to Chapter button */
+.rr-goto-chapter-btn {
+  margin-top: 1rem;
+}
+
+.rr-goto-chapter-btn i {
+  margin-right: 0.25rem;
+}
+
+/* Swap Section in Author Panel */
+.rr-swap-section {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
+  text-align: center;
+}
+
+.rr-swap-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: clamp(0.65rem, 2vw, 0.75rem);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* We posted their shoutout (green) */
+.rr-swap-badge-swapped {
+  background: rgba(40, 167, 69, 0.2);
+  color: #28a745;
+  border: 1px solid #28a745;
+}
+
+/* Both posted - swap complete (cyan) */
+.rr-swap-badge-returned {
+  background: rgba(23, 162, 184, 0.2);
+  color: #17a2b8;
+  border: 1px solid #17a2b8;
+}
+
+/* We posted, scanned, they didn't return (red) */
+.rr-swap-badge-not-found {
+  background: rgba(220, 53, 69, 0.2);
+  color: #dc3545;
+  border: 1px solid #dc3545;
+}
+
+/* They shouted us first (cyan) */
+.rr-swap-badge-shouted {
+  background: rgba(23, 162, 184, 0.2);
+  color: #17a2b8;
+  border: 1px solid #17a2b8;
+}
+
+/* Scheduled but not posted yet (orange) */
+.rr-swap-badge-scheduled {
+  background: rgba(230, 126, 34, 0.2);
+  color: #e67e22;
+  border: 1px solid #e67e22;
+}
+
+/* We posted but haven't scanned their chapters yet (grey) */
+.rr-swap-badge-not-scanned {
+  background: rgba(128, 128, 128, 0.2);
+  color: rgba(200, 200, 200, 0.9);
+  border: 1px solid rgba(128, 128, 128, 0.5);
+}
+
+/* Expected swap date set, not yet reached \u2014 we're deliberately holding off
+   on scanning. Purple to distinguish from the orange "scheduled" hue. */
+.rr-swap-badge-pending {
+  background: rgba(138, 99, 210, 0.2);
+  color: #b19cd9;
+  border: 1px solid rgba(138, 99, 210, 0.6);
+}
+
+.rr-swap-badge-clickable {
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.rr-swap-badge-clickable:hover {
+  background: rgba(255, 193, 7, 0.4);
+  transform: scale(1.05);
+}
+
+.rr-swap-badge-checking {
+  background: rgba(23, 162, 184, 0.2);
+  color: #17a2b8;
+  border: 1px solid #17a2b8;
+}
+
+.rr-swap-badge-checking i {
+  margin-right: 0.25rem;
+}
+
+.rr-swap-checking {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0 1rem;
+}
+
+.rr-swap-progress-bar {
+  width: 100%;
+  height: 6px;
+  background: rgba(128, 128, 128, 0.2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.rr-swap-progress-fill {
+  height: 100%;
+  background: #17a2b8;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.rr-swap-progress-text {
+  font-size: 0.75rem;
+  color: rgba(128, 128, 128, 0.9);
+}
+
+.rr-swap-progress-chapter {
+  font-size: 0.7rem;
+  color: rgba(128, 128, 128, 0.6);
+  max-width: 100%;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rr-swap-last-scan {
+  font-size: 0.75rem;
+  color: rgba(128, 128, 128, 0.7);
+  margin-top: 0.5rem;
+}
+
+.rr-check-swap-btn {
+  margin-top: 0.5rem;
+}
+
+/* Swap Found Info */
+.rr-swap-found {
+  margin-top: 1rem;
+  padding: clamp(0.5rem, 2vw, 0.75rem);
+  background: rgba(40, 167, 69, 0.1);
+  border-radius: 6px;
+  border: 1px solid rgba(40, 167, 69, 0.3);
+  word-break: break-word;
+}
+
+.rr-swap-found-label {
+  font-size: clamp(0.75rem, 2vw, 0.85rem);
+  color: #28a745;
+}
+
+.rr-swap-found-label i {
+  margin-right: 0.25rem;
+}
+
+.rr-swap-view-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  color: #337ab7;
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.rr-swap-view-link:hover {
+  text-decoration: underline;
+}
+
+/* Swap Result (error only now) */
+.rr-swap-result {
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+}
+
+.rr-swap-result.rr-swap-not-found {
+  background: rgba(220, 53, 69, 0.1);
+  color: #dc3545;
+}
+
+.rr-swap-result i {
+  margin-right: 0.25rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .rr-modal.rr-modal-xlarge {
+    min-width: unset;
+    width: 95vw;
+  }
+  .rr-modal-edit-layout {
+    flex-direction: column;
+  }
+  .rr-modal-author-panel {
+    width: 100%;
+    max-width: 100%;
+  }
+  .rr-author-card-large {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 1rem;
+  }
+  .rr-author-cover-large {
+    width: 80px;
+    flex-shrink: 0;
+  }
+  .rr-scheduled-for-section {
+    width: 100%;
+  }
+  .rr-swap-section {
+    width: 100%;
+  }
+}
+
+@media (max-width: 600px) {
+  .rr-modal-preview-container {
+    max-height: 200px;
+  }
+  .rr-author-card-large {
+    flex-direction: column;
+  }
+}
+
+/* Expected swap date pill \u2014 sits inline with the SchedulePill on a
+   per-schedule row. Native date input is restyled to fit the dark theme. */
+.rr-expected-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  min-height: 22px;
+  padding: 2px 0.3rem;
+  font-size: 0.7rem;
+  line-height: 1;
+  background: rgba(128, 128, 128, 0.15);
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 11px;
+  color: inherit;
+  flex-wrap: wrap;
+  row-gap: 2px;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+.rr-expected-pill > * {
+  flex-shrink: 0;
+}
+
+.rr-expected-pill > i {
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+
+.rr-expected-pill-label {
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+.rr-expected-pill-date {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.rr-expected-pill-editing {
+  background: rgba(51, 122, 183, 0.15);
+  border-color: rgba(51, 122, 183, 0.4);
+}
+
+.rr-expected-pill-input {
+  /* Keep the native picker indicator (appearance:none would strip it) but
+     drop the chrome around the field with a transparent background + no
+     border. color-scheme: dark flips the indicator white-on-dark to fit. */
+  background: transparent;
+  border: none;
+  outline: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.7rem;
+  padding: 0;
+  height: 18px;
+  line-height: 1;
+  width: 5.4rem;
+  min-width: 0;
+  color-scheme: dark;
+}
+
+/* Don't use display:none on the indicator \u2014 Chrome silently disables
+   showPicker() if the indicator is fully hidden. Make it invisible but
+   still part of the layout so the API works. Our custom calendar button
+   sits next to the input as the visible affordance. */
+.rr-expected-pill-input::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  width: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.rr-expected-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 3px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.6rem;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.rr-expected-pill-btn:hover {
+  background: rgba(128, 128, 128, 0.18);
+  border-color: rgba(128, 128, 128, 0.5);
+}
+
+.rr-expected-pill-confirm {
+  border-color: rgba(40, 167, 69, 0.55);
+  color: #6fcc7f;
+}
+
+.rr-expected-pill-confirm:hover {
+  background: rgba(40, 167, 69, 0.18);
+  border-color: rgba(40, 167, 69, 0.85);
+  color: #fff;
+}
+
+.rr-expected-pill-saved {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #6fcc7f;
+  background: rgba(40, 167, 69, 0.18);
+  padding: 0 0.3rem;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 8px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+`;
 
   // src/shout_out_swapper/ui/scanner/ScannerModal.css
   var ScannerModal_default = "/* Scanner Modal Styles */\n\n.rr-scanner-content {\n  display: flex;\n  flex-direction: column;\n  gap: 1rem;\n}\n\n.rr-scanner-fiction-select {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n}\n\n.rr-scanner-fiction-select select {\n  max-width: 400px;\n}\n\n.rr-scanner-description {\n  color: inherit;\n  opacity: 0.7;\n  font-size: 0.9rem;\n  margin: 0;\n}\n\n/* Progress */\n.rr-scanner-progress {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  padding: 1rem;\n  background: rgba(128, 128, 128, 0.1);\n  border-radius: 8px;\n}\n\n.rr-scanner-progress-bar {\n  height: 8px;\n  background: rgba(128, 128, 128, 0.2);\n  border-radius: 4px;\n  overflow: hidden;\n}\n\n.rr-scanner-progress-fill {\n  height: 100%;\n  background: #337ab7;\n  border-radius: 4px;\n  transition: width 0.3s ease;\n}\n\n.rr-scanner-progress-text {\n  font-size: 0.85rem;\n  opacity: 0.8;\n}\n\n.rr-scanner-found-count {\n  font-size: 0.85rem;\n  color: #28a745;\n  font-weight: 500;\n}\n\n/* Results */\n.rr-scanner-results {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  max-height: 200px;\n  overflow-y: auto;\n}\n\n.rr-scanner-results-header {\n  font-weight: 600;\n  font-size: 0.9rem;\n}\n\n.rr-scanner-results-list {\n  display: flex;\n  flex-direction: column;\n  gap: 0.25rem;\n}\n\n.rr-scanner-result-item {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  font-size: 0.85rem;\n  padding: 0.25rem 0;\n  border-bottom: 1px solid rgba(128, 128, 128, 0.1);\n}\n\n.rr-scanner-result-chapter {\n  font-weight: 500;\n  flex-shrink: 0;\n  max-width: 200px;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.rr-scanner-result-arrow {\n  opacity: 0.5;\n  flex-shrink: 0;\n}\n\n.rr-scanner-result-fiction {\n  color: #337ab7;\n  flex: 1;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.rr-scanner-result-author {\n  opacity: 0.6;\n  flex-shrink: 0;\n  font-size: 0.8rem;\n}\n\n/* Summary */\n.rr-scanner-summary {\n  padding: 1rem;\n  border-radius: 8px;\n  font-weight: 500;\n}\n\n.rr-scanner-summary-success {\n  background: rgba(40, 167, 69, 0.1);\n  color: #28a745;\n}\n\n.rr-scanner-summary-error {\n  background: rgba(220, 53, 69, 0.1);\n  color: #dc3545;\n}\n\n/* Checkbox */\n.rr-scanner-checkbox {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  cursor: pointer;\n  font-size: 0.9rem;\n}\n\n.rr-scanner-checkbox input {\n  cursor: pointer;\n}\n\n.rr-scanner-batch-label {\n  font-size: 0.8125rem;\n  font-weight: 500;\n  margin-bottom: 0.35rem;\n  opacity: 0.85;\n}\n\n.rr-scanner-phase {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  padding: 0.35rem 0.625rem;\n  margin-bottom: 0.75rem;\n  font-size: 0.75rem;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  border-radius: 999px;\n  background: rgba(0, 0, 0, 0.04);\n  width: fit-content;\n}\n.rr-scanner-phase-dot {\n  width: 7px;\n  height: 7px;\n  border-radius: 50%;\n  background: #999;\n  flex-shrink: 0;\n}\n.rr-scanner-phase--idle .rr-scanner-phase-dot { background: #9ca3af; }\n.rr-scanner-phase--scanning .rr-scanner-phase-dot {\n  background: #3b82f6;\n  animation: rr-scanner-pulse 1.2s ease-in-out infinite;\n}\n.rr-scanner-phase--swap-check .rr-scanner-phase-dot {\n  background: #a855f7;\n  animation: rr-scanner-pulse 1.2s ease-in-out infinite;\n}\n.rr-scanner-phase--complete .rr-scanner-phase-dot { background: #22c55e; }\n.rr-scanner-phase--error .rr-scanner-phase-dot { background: #ef4444; }\n@keyframes rr-scanner-pulse {\n  0%, 100% { opacity: 1; transform: scale(1); }\n  50% { opacity: 0.55; transform: scale(0.85); }\n}\n";
 
   // src/shout_out_swapper/ui/export/ExportImportModal.css
-  var ExportImportModal_default = "/* Export/Import Modal styles */\n\n.rr-export-import-content {\n  padding: 0.5rem 0;\n}\n\n.rr-export-section,\n.rr-import-section {\n  margin-bottom: 1rem;\n}\n\n.rr-export-section h5,\n.rr-import-section h5 {\n  margin-bottom: 0.5rem;\n  font-weight: 600;\n}\n\n.rr-export-section p,\n.rr-import-section p {\n  margin-bottom: 0.75rem;\n  font-size: 0.85rem;\n}\n\n.rr-csv-target-row {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  margin-bottom: 0.75rem;\n}\n\n.rr-csv-target-label {\n  font-size: 0.8rem;\n  white-space: nowrap;\n  margin-bottom: 0;\n}\n\n.rr-csv-target-row select {\n  flex: 1;\n  min-width: 0;\n}\n\n.rr-template-section {\n  margin-top: 0.25rem;\n}\n\n.rr-template-section h5 {\n  margin-bottom: 0.5rem;\n  font-weight: 600;\n}\n\n.rr-template-section p {\n  margin-bottom: 0.75rem;\n  font-size: 0.85rem;\n}\n\n.rr-import-progress {\n  margin-top: 1rem;\n}\n\n.rr-import-progress .progress {\n  height: 8px;\n  border-radius: 4px;\n  background: rgba(128, 128, 128, 0.2);\n  overflow: hidden;\n  margin-bottom: 0.5rem;\n}\n\n.rr-import-progress .progress-bar {\n  height: 100%;\n  background: #337ab7;\n  transition: width 0.2s ease;\n}\n\n.rr-import-progress small {\n  display: block;\n}\n";
+  var ExportImportModal_default = "/* Export/Import Modal styles */\n\n.rr-export-import-content {\n  padding: 0.5rem 0;\n}\n\n.rr-export-section,\n.rr-import-section {\n  margin-bottom: 1rem;\n}\n\n.rr-export-section h5,\n.rr-import-section h5 {\n  margin-bottom: 0.5rem;\n  font-weight: 600;\n}\n\n.rr-export-section p,\n.rr-import-section p {\n  margin-bottom: 0.75rem;\n  font-size: 0.85rem;\n}\n\n.rr-csv-target-row {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  margin-bottom: 0.75rem;\n}\n\n.rr-csv-target-label {\n  font-size: 0.8rem;\n  white-space: nowrap;\n  margin-bottom: 0;\n}\n\n.rr-csv-target-row select {\n  flex: 1;\n  min-width: 0;\n}\n\n.rr-template-section {\n  margin-top: 0.25rem;\n}\n\n.rr-template-section h5 {\n  margin-bottom: 0.5rem;\n  font-weight: 600;\n}\n\n.rr-template-section p {\n  margin-bottom: 0.75rem;\n  font-size: 0.85rem;\n}\n\n.rr-import-progress {\n  margin-top: 1rem;\n}\n\n.rr-import-progress .progress {\n  height: 8px;\n  border-radius: 4px;\n  background: rgba(128, 128, 128, 0.2);\n  overflow: hidden;\n  margin-bottom: 0.5rem;\n}\n\n.rr-import-progress .progress-bar {\n  height: 100%;\n  background: #337ab7;\n  transition: width 0.2s ease;\n}\n\n.rr-import-progress small {\n  display: block;\n}\n\n.rr-guild-progress {\n  font-size: 0.85rem;\n}\n\n.rr-guild-status {\n  display: flex;\n  align-items: center;\n  gap: 0.4rem;\n  padding: 0.4rem 0.6rem;\n  background: rgba(51, 122, 183, 0.08);\n  border: 1px solid rgba(51, 122, 183, 0.2);\n  border-radius: 4px;\n  margin-bottom: 0.4rem;\n}\n\n.rr-guild-log summary {\n  cursor: pointer;\n  color: rgba(128, 128, 128, 0.85);\n  user-select: none;\n}\n\n.rr-guild-log ul {\n  list-style: none;\n  margin: 0.4rem 0 0;\n  padding: 0.4rem 0.6rem;\n  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;\n  font-size: 0.75rem;\n  background: rgba(128, 128, 128, 0.07);\n  border-radius: 4px;\n  max-height: 12rem;\n  overflow-y: auto;\n}\n\n.rr-guild-log li {\n  padding: 0.1rem 0;\n}\n\n.rr-guild-log-time {\n  color: rgba(128, 128, 128, 0.7);\n  margin-right: 0.4rem;\n}\n";
 
   // src/common/settings/ui/SettingsModal.css
-  var SettingsModal_default = '/* Settings Modal Styles */\n\n.rr-settings-form {\n  display: flex;\n  flex-direction: column;\n  gap: 1.25rem;\n}\n\n.rr-settings-group {\n  display: flex;\n  flex-direction: column;\n  gap: 0.25rem;\n}\n\n.rr-settings-label {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  font-weight: 500;\n  cursor: pointer;\n}\n\n.rr-settings-label input[type="checkbox"],\n.rr-settings-label input[type="radio"] {\n  margin: 0;\n}\n\n.rr-settings-label-disabled {\n  opacity: 0.6;\n  cursor: not-allowed;\n}\n\n.rr-settings-description {\n  margin: 0;\n  margin-left: 1.5rem;\n  font-size: 0.85rem;\n  color: rgba(128, 128, 128, 0.8);\n}\n\n.rr-settings-options {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  margin-left: 0.5rem;\n  margin-top: 0.5rem;\n}\n\n.rr-settings-radio {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  cursor: pointer;\n}\n\n.rr-settings-badge {\n  font-size: 0.7rem;\n  padding: 0.15rem 0.4rem;\n  background: rgba(128, 128, 128, 0.2);\n  border-radius: 4px;\n  margin-left: 0.5rem;\n}\n\n.rr-settings-danger {\n  padding-top: 1rem;\n  border-top: 1px solid rgba(128, 128, 128, 0.2);\n}\n\n.rr-settings-danger .rr-settings-label {\n  color: #dc3545;\n}\n\n.rr-settings-danger .rr-settings-description {\n  margin-left: 0;\n}\n';
+  var SettingsModal_default = `/* Settings Modal Styles */
+
+.rr-settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.rr-settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.rr-settings-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.rr-settings-label input[type="checkbox"],
+.rr-settings-label input[type="radio"] {
+  margin: 0;
+}
+
+.rr-settings-label-disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.rr-settings-description {
+  margin: 0;
+  margin-left: 1.5rem;
+  font-size: 0.85rem;
+  color: rgba(128, 128, 128, 0.8);
+}
+
+.rr-settings-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-left: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.rr-settings-radio {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.rr-settings-badge {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.4rem;
+  background: rgba(128, 128, 128, 0.2);
+  border-radius: 4px;
+  margin-left: 0.5rem;
+}
+
+.rr-settings-danger {
+  padding-top: 1rem;
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
+}
+
+.rr-settings-danger .rr-settings-label {
+  color: #dc3545;
+}
+
+.rr-settings-danger .rr-settings-description {
+  margin-left: 0;
+}
+
+.rr-storage-usage {
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.rr-storage-total {
+  font-size: 1rem;
+}
+
+.rr-storage-pct {
+  color: rgba(128, 128, 128, 0.85);
+  font-weight: 500;
+}
+
+.rr-storage-bar {
+  height: 6px;
+  background: rgba(128, 128, 128, 0.2);
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 0.4rem 0 0.6rem;
+}
+
+.rr-storage-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #28a745 0%, #28a745 70%, #f0ad4e 85%, #d9534f 100%);
+  background-size: 100% 100%;
+  transition: width 0.2s ease;
+}
+
+.rr-storage-breakdown {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+}
+
+.rr-storage-breakdown li {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.15rem 0;
+  border-bottom: 1px dashed rgba(128, 128, 128, 0.15);
+}
+
+.rr-storage-breakdown li:last-child {
+  border-bottom: none;
+}
+
+.rr-storage-key {
+  color: rgba(128, 128, 128, 0.95);
+}
+
+.rr-storage-bytes {
+  color: inherit;
+  font-weight: 600;
+}
+
+/* Vertical tabs on the left, content on the right. The layout itself has a
+   fixed height so the modal doesn't jump when switching between a short tab
+   (e.g. Danger Zone) and a long one (e.g. Storage). The right pane scrolls
+   internally when its content overflows. */
+.rr-settings-layout {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 1rem;
+  align-items: stretch;
+  height: 380px;
+}
+
+.rr-settings-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  border-right: 1px solid rgba(128, 128, 128, 0.2);
+  padding-right: 0.75rem;
+}
+
+.rr-settings-tab {
+  background: transparent;
+  border: none;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.9rem;
+  color: rgba(128, 128, 128, 0.95);
+  cursor: pointer;
+  text-align: left;
+  border-radius: 4px;
+  border-left: 2px solid transparent;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.rr-settings-tab:hover {
+  background: rgba(128, 128, 128, 0.08);
+  color: inherit;
+}
+
+.rr-settings-tab.active {
+  background: rgba(51, 122, 183, 0.12);
+  border-left-color: #337ab7;
+  color: #337ab7;
+}
+
+.rr-settings-tab-danger.active {
+  background: rgba(217, 83, 79, 0.12);
+  border-left-color: #d9534f;
+  color: #d9534f;
+}
+
+/* Right pane fills the layout's fixed height and scrolls when overflowing. */
+.rr-settings-layout .rr-settings-form {
+  overflow-y: auto;
+  height: 100%;
+  min-height: 0;
+  padding-right: 0.25rem;
+}
+
+@media (max-width: 600px) {
+  .rr-settings-layout {
+    grid-template-columns: 1fr;
+  }
+  .rr-settings-tabs {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+    padding-right: 0;
+    padding-bottom: 0.5rem;
+  }
+  .rr-settings-tab {
+    border-left: none;
+    border-bottom: 2px solid transparent;
+  }
+  .rr-settings-tab.active {
+    border-left: none;
+    border-bottom-color: #337ab7;
+  }
+  .rr-settings-tab-danger.active {
+    border-bottom-color: #d9534f;
+  }
+}
+`;
 
   // src/shout_out_swapper/ui/banner/TodayBanner.css
   var TodayBanner_default = "/* Today Banner - Chapter edit page shoutout reminder */\n\n.rr-today-banner {\n  margin-bottom: 1.5rem;\n}\n\n.rr-today-banner-content {\n  padding: 0;\n}\n\n/* Header */\n.rr-today-banner-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 0.75rem 1rem;\n  background: rgba(128, 128, 128, 0.05);\n  border-bottom: 1px solid rgba(128, 128, 128, 0.1);\n}\n\n.rr-today-banner-has-shoutout .rr-today-banner-header {\n  background: linear-gradient(135deg, rgba(51, 122, 183, 0.1) 0%, rgba(51, 122, 183, 0.05) 100%);\n  border-bottom-color: rgba(51, 122, 183, 0.2);\n}\n\n.rr-today-banner-header-left {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  font-weight: 600;\n  font-size: 0.95rem;\n}\n\n.rr-today-banner-header-left i {\n  color: #337ab7;\n  font-size: 1rem;\n}\n\n.rr-today-banner-header-actions {\n  display: flex;\n  gap: 0.25rem;\n}\n\n/* Shoutouts container */\n.rr-today-banner-shoutouts {\n  padding: 1rem;\n  display: flex;\n  flex-direction: column;\n  gap: 0.75rem;\n}\n\n/* Individual shoutout row */\n.rr-today-banner-shoutout {\n  display: flex;\n  align-items: center;\n  gap: 1rem;\n  padding: 0.75rem;\n  background: rgba(128, 128, 128, 0.03);\n  border: 1px solid rgba(128, 128, 128, 0.1);\n  border-radius: 8px;\n  transition: all 0.15s;\n}\n\n.rr-today-banner-shoutout:hover {\n  background: rgba(128, 128, 128, 0.06);\n  border-color: rgba(128, 128, 128, 0.2);\n}\n\n/* Book with spine effect */\n.rr-today-banner-book {\n  position: relative;\n  flex-shrink: 0;\n  perspective: 200px;\n}\n\n.rr-today-banner-book-spine {\n  position: absolute;\n  left: -6px;\n  top: 0;\n  bottom: 0;\n  width: 8px;\n  background: linear-gradient(90deg,\n    rgba(0, 0, 0, 0.3) 0%,\n    rgba(0, 0, 0, 0.1) 30%,\n    rgba(255, 255, 255, 0.1) 50%,\n    rgba(0, 0, 0, 0.1) 70%,\n    rgba(0, 0, 0, 0.2) 100%\n  );\n  border-radius: 2px 0 0 2px;\n  transform: rotateY(-20deg);\n  transform-origin: right center;\n}\n\n.rr-today-banner-cover {\n  width: 55px;\n  height: 75px;\n  object-fit: cover;\n  border-radius: 2px;\n  box-shadow:\n    2px 2px 8px rgba(0, 0, 0, 0.15),\n    0 0 1px rgba(0, 0, 0, 0.1);\n}\n\n.rr-today-banner-cover-placeholder {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  background: rgba(128, 128, 128, 0.1);\n  color: rgba(128, 128, 128, 0.4);\n  font-size: 1.5rem;\n}\n\n/* Info section */\n.rr-today-banner-info {\n  flex: 1;\n  min-width: 0;\n  padding-left: 0.25rem;\n}\n\n.rr-today-banner-title {\n  font-weight: 600;\n  font-size: 0.95rem;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.rr-today-banner-author {\n  font-size: 0.85rem;\n  opacity: 0.7;\n  margin-top: 0.15rem;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.rr-today-banner-for {\n  display: inline-flex;\n  align-items: center;\n  gap: 0.3rem;\n  margin-top: 0.25rem;\n  padding: 0.1rem 0.4rem;\n  background: rgba(51, 122, 183, 0.15);\n  border-radius: 3px;\n  color: #337ab7;\n  font-size: 0.7rem;\n  font-weight: 500;\n  max-width: 100%;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n/* Action buttons */\n.rr-today-banner-actions {\n  display: flex;\n  gap: 0.5rem;\n  flex-shrink: 0;\n}\n\n.rr-today-banner-actions .btn {\n  display: flex;\n  align-items: center;\n  gap: 0.35rem;\n  padding: 0.5rem 0.75rem;\n  font-size: 0.85rem;\n  white-space: nowrap;\n}\n\n.rr-today-banner-actions .btn i {\n  font-size: 0.8rem;\n}\n\n/* Insert button styles */\n.rr-banner-insert-pre,\n.rr-banner-insert-post {\n  background: rgba(51, 122, 183, 0.1);\n  border: 1px solid rgba(51, 122, 183, 0.2);\n  color: #337ab7;\n}\n\n.rr-banner-insert-pre:hover,\n.rr-banner-insert-post:hover {\n  background: rgba(51, 122, 183, 0.2);\n  border-color: rgba(51, 122, 183, 0.3);\n}\n\n.rr-banner-insert-pre:disabled,\n.rr-banner-insert-post:disabled {\n  opacity: 0.6;\n  cursor: not-allowed;\n}\n\n/* Calendar Overlay */\n.rr-calendar-overlay {\n  width: 900px;\n  max-width: 95vw;\n  max-height: 90vh;\n  overflow: auto;\n  background: var(--rr-card-bg, #1e1e2d);\n}\n\n.rr-calendar-overlay .card-header {\n  position: sticky;\n  top: 0;\n  z-index: 10;\n  background: inherit;\n}\n\n.rr-calendar-overlay .card-body {\n  padding: 1rem;\n}\n\n/* Hide unscheduled section in overlay */\n.rr-calendar-overlay .rr-unscheduled-toggle {\n  display: none;\n}\n\n/* Responsive */\n@media (max-width: 576px) {\n  .rr-today-banner-shoutout {\n    flex-wrap: wrap;\n  }\n\n  .rr-today-banner-info {\n    flex: 1 1 calc(100% - 80px);\n  }\n\n  .rr-today-banner-actions {\n    width: 100%;\n    justify-content: flex-end;\n    margin-top: 0.5rem;\n  }\n\n  .rr-calendar-overlay {\n    width: 100%;\n  }\n}\n";

@@ -5,8 +5,10 @@
   "description": "Calendar-based shoutout swap scheduler for Royal Road authors",
   "permissions": [
     "storage",
+    "unlimitedStorage",
     "activeTab",
-    "offscreen"
+    "offscreen",
+    "scripting"
   ],
   "host_permissions": [
     "https://www.royalroad.com/*",
@@ -24,20 +26,6 @@
       ],
       "js": ["dist/content.js"],
       "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "https://rrwritersguild.com/shoutouts/dashboard*"
-      ],
-      "js": ["dist/guild.js"],
-      "run_at": "document_idle",
-      "all_frames": true
-    }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": ["guild.html", "dist/guild.js"],
-      "matches": ["https://www.royalroad.com/*"]
     }
   ],
   "action": {

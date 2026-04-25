@@ -216,19 +216,25 @@ export function Layout({ routeType = 'main-dashboard' }) {
           contactId = await db.save('contacts', {
             authorName: data.authorName,
             profileUrl: data.profileUrl || '',
-            authorAvatar: data.authorAvatar || ''
+            authorAvatar: data.authorAvatar || '',
+            discordUsername: data.discordUsername || ''
           });
           logger.info('Created new contact', { contactId, authorName: data.authorName });
         } else {
           contactId = contact.id;
-          // Update contact info if we have better data
-          const needsUpdate = (data.profileUrl && !contact.profileUrl) ||
-                              (data.authorAvatar && !contact.authorAvatar);
+          // Update contact info if we have better data, or if the user
+          // edited the Discord username from the modal.
+          const newDiscord = data.discordUsername ?? contact.discordUsername ?? '';
+          const needsUpdate =
+            (data.profileUrl && !contact.profileUrl) ||
+            (data.authorAvatar && !contact.authorAvatar) ||
+            newDiscord !== (contact.discordUsername || '');
           if (needsUpdate) {
             await db.save('contacts', {
               ...contact,
               profileUrl: data.profileUrl || contact.profileUrl,
-              authorAvatar: data.authorAvatar || contact.authorAvatar
+              authorAvatar: data.authorAvatar || contact.authorAvatar,
+              discordUsername: newDiscord,
             });
           }
         }
@@ -278,6 +284,7 @@ export function Layout({ routeType = 'main-dashboard' }) {
         id: data.id,
         code: data.code,
         expectedReturnDate: data.expectedReturnDate || '',
+        notes: data.notes || '',
         schedules,
         // Cached parsed data
         fictionId: data.fictionId || '',
@@ -304,6 +311,55 @@ export function Layout({ routeType = 'main-dashboard' }) {
       await loadData();
     } catch (err) {
       logger.error('Failed to save shoutout', err);
+    }
+  };
+
+  // Persist a contact's Discord username independently of the shoutout save
+  // flow — used by the badge's inline edit so it works even in view mode
+  // (archived shoutouts) and updates instantly across reopens.
+  // Inline contact-Discord save. Avoids loadData() — patching the local
+  // contacts array directly so the UI doesn't have to reload every shoutout
+  // and re-render the calendar over a one-field change.
+  const handleSaveContactDiscord = async (authorName, discordUsername) => {
+    if (!authorName) return;
+    try {
+      const existing = contacts.find(c => c.authorName === authorName);
+      if (existing) {
+        if ((existing.discordUsername || '') === (discordUsername || '')) return;
+        const updated = { ...existing, discordUsername: discordUsername || '' };
+        await db.save('contacts', updated);
+        setContacts(prev => prev.map(c => (c.id === updated.id ? updated : c)));
+      } else {
+        const newContact = { authorName, discordUsername: discordUsername || '', profileUrl: '', authorAvatar: '' };
+        const id = await db.save('contacts', newContact);
+        setContacts(prev => [...prev, { ...newContact, id }]);
+      }
+      logger.info('Saved Discord username to contact', { authorName, discordUsername });
+    } catch (err) {
+      logger.error('Failed to save contact Discord username', err);
+    }
+  };
+
+  // Update one schedule's fields on a shoutout in place — used by inline
+  // edits (expected swap date, etc) so they persist without a full modal save.
+  const handleSaveScheduleField = async (shoutoutId, idx, fields) => {
+    if (!shoutoutId || idx == null || !fields) return;
+    try {
+      const shoutout = shoutouts.find(s => s.id === shoutoutId)
+        || (await db.getById('shoutouts', shoutoutId));
+      if (!shoutout) return;
+      const newSchedules = [...(shoutout.schedules || [])];
+      if (!newSchedules[idx]) return;
+      newSchedules[idx] = { ...newSchedules[idx], ...fields };
+      const updated = { ...shoutout, schedules: newSchedules };
+      await db.save('shoutouts', updated);
+      // Patch local shoutouts array; also update the active modal's shoutout
+      // so the new value reflects without a full reload.
+      setShoutouts(prev => prev.map(s => (s.id === shoutoutId ? updated : s)));
+      setModalShoutout(prev => (prev?.id === shoutoutId ? updated : prev));
+      logger.info('Saved schedule field', { shoutoutId, idx, fields });
+    } catch (err) {
+      logger.error('Failed to save schedule field', err);
     }
   };
 
@@ -750,6 +806,9 @@ export function Layout({ routeType = 'main-dashboard' }) {
         mode={modalMode}
         myFictions={myFictions}
         currentFictionId={filterFictionId}
+        contacts={contacts}
+        onSaveContactDiscord={handleSaveContactDiscord}
+        onSaveScheduleField={handleSaveScheduleField}
       />
 
       <SettingsModal

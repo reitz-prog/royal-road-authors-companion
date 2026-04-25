@@ -240,6 +240,79 @@
   margin-top: 0.75rem;
 }
 
+/* Discord username row — small Discord-coloured icon on the left, plain
+   form-control input in the middle, copy button on the right. No chip. */
+.rr-discord-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.rr-discord-row-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: #5865f2;
+}
+
+.rr-discord-row-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.rr-discord-row-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
+.rr-discord-row-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 4px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.rr-discord-row-btn:hover {
+  background: rgba(128, 128, 128, 0.1);
+  border-color: rgba(128, 128, 128, 0.4);
+}
+
+.rr-discord-row-confirm {
+  border-color: rgba(40, 167, 69, 0.5);
+  color: #28a745;
+}
+
+.rr-discord-row-confirm:hover {
+  background: rgba(40, 167, 69, 0.12);
+  border-color: rgba(40, 167, 69, 0.7);
+}
+
+.rr-discord-row-saved {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #28a745;
+  background: rgba(40, 167, 69, 0.12);
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+}
+
 /* Scheduled for section in author panel */
 .rr-scheduled-for-section {
   margin-top: 1rem;
@@ -350,6 +423,16 @@
   gap: 0.5rem;
   margin-top: 0.5rem;
   align-items: center;
+}
+
+.rr-notes-section {
+  margin-top: 1rem;
+}
+
+.rr-notes-textarea {
+  margin-top: 0.35rem;
+  resize: vertical;
+  min-height: 4rem;
 }
 
 .rr-schedule-tag {
@@ -644,6 +727,14 @@
   border: 1px solid rgba(128, 128, 128, 0.5);
 }
 
+/* Expected swap date set, not yet reached — we're deliberately holding off
+   on scanning. Purple to distinguish from the orange "scheduled" hue. */
+.rr-swap-badge-pending {
+  background: rgba(138, 99, 210, 0.2);
+  color: #b19cd9;
+  border: 1px solid rgba(138, 99, 210, 0.6);
+}
+
 .rr-swap-badge-clickable {
   cursor: pointer;
   transition: all 0.15s;
@@ -801,4 +892,123 @@
   .rr-author-card-large {
     flex-direction: column;
   }
+}
+
+/* Expected swap date pill — sits inline with the SchedulePill on a
+   per-schedule row. Native date input is restyled to fit the dark theme. */
+.rr-expected-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  min-height: 22px;
+  padding: 2px 0.3rem;
+  font-size: 0.7rem;
+  line-height: 1;
+  background: rgba(128, 128, 128, 0.15);
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 11px;
+  color: inherit;
+  flex-wrap: wrap;
+  row-gap: 2px;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+.rr-expected-pill > * {
+  flex-shrink: 0;
+}
+
+.rr-expected-pill > i {
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+
+.rr-expected-pill-label {
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+.rr-expected-pill-date {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.rr-expected-pill-editing {
+  background: rgba(51, 122, 183, 0.15);
+  border-color: rgba(51, 122, 183, 0.4);
+}
+
+.rr-expected-pill-input {
+  /* Keep the native picker indicator (appearance:none would strip it) but
+     drop the chrome around the field with a transparent background + no
+     border. color-scheme: dark flips the indicator white-on-dark to fit. */
+  background: transparent;
+  border: none;
+  outline: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.7rem;
+  padding: 0;
+  height: 18px;
+  line-height: 1;
+  width: 5.4rem;
+  min-width: 0;
+  color-scheme: dark;
+}
+
+/* Don't use display:none on the indicator — Chrome silently disables
+   showPicker() if the indicator is fully hidden. Make it invisible but
+   still part of the layout so the API works. Our custom calendar button
+   sits next to the input as the visible affordance. */
+.rr-expected-pill-input::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  width: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.rr-expected-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 3px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.6rem;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.rr-expected-pill-btn:hover {
+  background: rgba(128, 128, 128, 0.18);
+  border-color: rgba(128, 128, 128, 0.5);
+}
+
+.rr-expected-pill-confirm {
+  border-color: rgba(40, 167, 69, 0.55);
+  color: #6fcc7f;
+}
+
+.rr-expected-pill-confirm:hover {
+  background: rgba(40, 167, 69, 0.18);
+  border-color: rgba(40, 167, 69, 0.85);
+  color: #fff;
+}
+
+.rr-expected-pill-saved {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #6fcc7f;
+  background: rgba(40, 167, 69, 0.18);
+  padding: 0 0.3rem;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 8px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }

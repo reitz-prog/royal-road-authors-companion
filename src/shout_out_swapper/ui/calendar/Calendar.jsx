@@ -1270,11 +1270,16 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
                   const allArchivedSwapped = anyArchived && archivedScheds.every(x => x.swappedDate);
                   const anyArchivedSwapped = archivedScheds.some(x => x.swappedDate);
                   const allArchivedScanned = anyArchived && archivedScheds.every(x => x.lastSwapScanDate);
+                  const todayStrCard = new Date().toISOString().slice(0, 10);
+                  const anyPendingExpected = scheds.some(
+                    x => x.expectedSwapDate && !x.swappedDate && todayStrCard < x.expectedSwapDate,
+                  );
 
                   // Aggregate cover status:
                   // - no archived → SCHEDULED (orange clock; we haven't posted yet)
                   // - all archived + all swapped → SWAPPED (green retweet)
                   // - some swapped, some not → PARTIAL (orange half-circle)
+                  // - PENDING (purple hourglass-start) — expected swap date set + not reached yet
                   // - all archived, all scanned, none swapped → NOT FOUND (red ✕)
                   // - all archived, some not scanned → NOT SCANNED (grey hourglass)
                   let statusClass = 'rr-swap-status-scheduled';
@@ -1292,6 +1297,10 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
                     statusClass = 'rr-swap-status-scheduled';
                     statusIcon = 'fa-adjust';
                     statusTitle = 'Partial swap — some schedules not yet reciprocated';
+                  } else if (anyPendingExpected) {
+                    statusClass = 'rr-swap-status-pending';
+                    statusIcon = 'fa-hourglass-start';
+                    statusTitle = 'Pending — expected date not yet reached';
                   } else if (anyArchived && allArchivedScanned) {
                     statusClass = 'rr-swap-status-notfound';
                     statusIcon = 'fa-times';
@@ -1341,6 +1350,11 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
                             by <span class="rr-archive-author-link" data-author={s.authorName}>{s.authorName || 'Unknown'}</span>
                           </span>
                         </div>
+                        {s.notes && (
+                          <div class="rr-archive-shoutout-notes" title={s.notes}>
+                            <i class="fa fa-sticky-note-o"></i> {s.notes}
+                          </div>
+                        )}
                         <div class="rr-archive-schedule-lines">
                           {scheds.map((sched, idx) => {
                             const fiction = myFictions.find(f => String(f.fictionId) === String(sched.fictionId));
@@ -1348,6 +1362,8 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
                             const wePosted = !!sched.chapter;
                             const swapped = !!sched.swappedDate;
                             const scanned = !!sched.lastSwapScanDate;
+                            const todayStr = new Date().toISOString().slice(0, 10);
+                            const isPending = !swapped && sched.expectedSwapDate && todayStr < sched.expectedSwapDate;
 
                             // Classify for line style + trailing indicator
                             let lineClass = 'rr-schedule-scheduled';
@@ -1369,6 +1385,13 @@ export function Calendar({ shoutouts = [], filterFictionId, myFictions = [], onD
                                 >
                                   <i class="fa fa-external-link"></i> {sched.swappedChapter || 'View chapter'}
                                 </a>
+                              );
+                            } else if (isPending) {
+                              lineClass = 'rr-schedule-pending';
+                              indicator = (
+                                <span class="rr-schedule-swap-state" title={`Expected by ${sched.expectedSwapDate} — won't scan until then`}>
+                                  <i class="fa fa-hourglass-start"></i> Pending {sched.expectedSwapDate}
+                                </span>
                               );
                             } else if (wePosted && scanned) {
                               lineClass = 'rr-schedule-notfound';

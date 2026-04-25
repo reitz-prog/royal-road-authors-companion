@@ -1,181 +1,127 @@
-// Writers Guild Integration Service
+// Writers Guild (rrwritersguild.com) API client.
+//
+// 3-step flow:
+//   1. GET /api/discord-auth/me.php           → authed user { id, ... }
+//   2. GET /api/shoutouts/authors/stories.php → user's RRWG stories, each with `link` to RR fiction
+//   3. GET /api/shoutouts/authors/bookings.php?story_id=… → bookings for one story
+//
+// Auth is cookie-based — host_permissions covers rrwritersguild.com so background
+// fetches with credentials: 'include' work as long as the user is signed in.
+
 import { log } from '../common/logging/core.js';
-import { parseShoutoutCodeAsync } from '../shout_out_swapper/services/parser.js';
-import * as db from '../common/db/proxy.js';
 
-const logger = log.scope('writers-guild');
+const logger = log.scope('rrwg');
+const BASE = 'https://rrwritersguild.com/api';
 
-/**
- * Fetch the Writers Guild dashboard HTML via background script
- * @returns {Promise<string>} Dashboard HTML
- */
-async function fetchWritersGuildDashboard() {
-  logger.info('Fetching Writers Guild dashboard via background');
-
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage({ type: 'fetchWritersGuild' }, (response) => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-      } else if (response?.success) {
-        resolve(response.html);
-      } else {
-        reject(new Error(response?.error || 'Failed to fetch Writers Guild dashboard'));
-      }
-    });
-  });
-}
-
-/**
- * Decode HTML entities in a string
- * @param {string} text - Text with HTML entities
- * @returns {string} Decoded text
- */
-function decodeHtmlEntities(text) {
-  const textarea = document.createElement('textarea');
-  textarea.innerHTML = text;
-  return textarea.value;
-}
-
-/**
- * Parse scheduled shoutouts from dashboard HTML
- * @param {string} html - Dashboard HTML
- * @returns {Array<{date: string, code: string}>} Parsed entries
- */
-export function parseScheduledShoutouts(html) {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
-
-  const entries = [];
-
-  // Find all shoutout card containers - look for the date element and work up
-  const dateElements = doc.querySelectorAll('.font-mono');
-
-  for (const dateEl of dateElements) {
-    const date = dateEl.textContent?.trim();
-
-    // Skip if not a date format
-    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
-
-    // Find the parent card container
-    let card = dateEl.closest('.rounded-lg');
-    if (!card) continue;
-
-    // Get code from the code display area (look for the pre-formatted code block)
-    const codeEl = card.querySelector('.font-mono.text-xs, [class*="bg-neutral-50"], [class*="bg-neutral-950"]');
-
-    // Skip the date element itself
-    if (codeEl === dateEl) {
-      // Try to find another element
-      const allCodeEls = card.querySelectorAll('.font-mono');
-      for (const el of allCodeEls) {
-        if (el !== dateEl && el.textContent?.includes('<')) {
-          let code = el.textContent?.trim();
-          if (code) {
-            code = decodeHtmlEntities(code);
-            entries.push({ date, code });
-            logger.debug('Found shoutout entry', { date });
-          }
-          break;
-        }
-      }
-    } else if (codeEl) {
-      let code = codeEl.textContent?.trim();
-      if (code && code.includes('<')) {
-        code = decodeHtmlEntities(code);
-        entries.push({ date, code });
-        logger.debug('Found shoutout entry', { date });
-      }
-    }
+export class RrwgAuthError extends Error {
+  constructor(msg) {
+    super(msg);
+    this.name = 'RrwgAuthError';
   }
-
-  logger.info(`Parsed ${entries.length} shoutout entries`);
-  return entries;
 }
 
-/**
- * Import shoutouts from Writers Guild into the extension
- * @param {string} currentFictionId - The fiction to schedule shoutouts for
- * @returns {Promise<{imported: number, skipped: number, errors: string[]}>}
- */
-export async function importFromWritersGuild(currentFictionId) {
-  const result = { imported: 0, skipped: 0, errors: [] };
-
+async function rrwgFetch(path) {
+  const url = `${BASE}${path}`;
+  console.log('[RR Companion RRWG] →', url);
+  const res = await fetch(url, { credentials: 'include', headers: { 'Accept': 'application/json' } });
+  console.log('[RR Companion RRWG] ←', res.status, url);
+  if (res.status === 401 || res.status === 403) {
+    throw new RrwgAuthError('Not signed in to RRWG');
+  }
+  if (!res.ok) throw new Error(`RRWG ${path} failed: ${res.status}`);
+  const text = await res.text();
+  if (!text) throw new RrwgAuthError('Empty response from RRWG');
   try {
-    // Fetch and parse dashboard
-    const html = await fetchWritersGuildDashboard();
-    const entries = parseScheduledShoutouts(html);
-
-    if (entries.length === 0) {
-      result.errors.push('No scheduled shoutouts found on Writers Guild dashboard');
-      return result;
-    }
-
-    // Get existing shoutouts to check for duplicates
-    const existingShoutouts = await db.getAll('shoutouts');
-
-    for (const entry of entries) {
-      try {
-        // Parse the shoutout code to get fiction details
-        const parsed = await parseShoutoutCodeAsync(entry.code);
-
-        if (!parsed.fictionId) {
-          result.errors.push(`Could not parse fiction ID for entry on ${entry.date}`);
-          result.skipped++;
-          continue;
-        }
-
-        // Check if this shoutout already exists (same fictionId and date)
-        const isDuplicate = existingShoutouts.some(s =>
-          s.fictionId === parsed.fictionId &&
-          s.schedules?.some(sch => sch.date === entry.date)
-        );
-
-        if (isDuplicate) {
-          logger.debug('Skipping duplicate shoutout', { fictionId: parsed.fictionId, date: entry.date });
-          result.skipped++;
-          continue;
-        }
-
-        // Create new shoutout
-        const shoutout = {
-          code: entry.code,
-          fictionId: parsed.fictionId,
-          fictionTitle: parsed.fictionTitle,
-          fictionUrl: parsed.fictionUrl,
-          coverUrl: parsed.coverUrl,
-          authorName: parsed.authorName,
-          authorAvatar: parsed.authorAvatar,
-          profileUrl: parsed.profileUrl,
-          schedules: [{
-            fictionId: currentFictionId,
-            date: entry.date,
-            chapter: null,
-            chapterUrl: null
-          }],
-          expectedReturnDate: null,
-          swappedDate: null,
-          swappedChapter: null,
-          swappedChapterUrl: null,
-          lastSwapScanDate: null
-        };
-
-        await db.save('shoutouts', shoutout);
-        result.imported++;
-        logger.info('Imported shoutout', { fictionId: parsed.fictionId, date: entry.date });
-
-      } catch (err) {
-        logger.error('Error importing entry', err);
-        result.errors.push(`Error importing entry for ${entry.date}: ${err.message}`);
-        result.skipped++;
-      }
-    }
-
+    return JSON.parse(text);
   } catch (err) {
-    logger.error('Failed to import from Writers Guild', err);
-    result.errors.push(err.message);
+    throw new Error(`RRWG ${path} returned non-JSON: ${text.slice(0, 80)}`);
   }
-
-  return result;
 }
 
-export default { parseScheduledShoutouts, importFromWritersGuild };
+export async function fetchRrwgMe() {
+  return rrwgFetch('/discord-auth/me.php');
+}
+
+export async function fetchRrwgStories(authorId) {
+  return rrwgFetch(`/shoutouts/authors/stories.php?author_id=${encodeURIComponent(authorId)}`);
+}
+
+export async function fetchRrwgBookings(storyId) {
+  return rrwgFetch(`/shoutouts/authors/bookings.php?story_id=${encodeURIComponent(storyId)}`);
+}
+
+// Pull RR fiction ID out of any RR URL.
+export function extractFictionId(url) {
+  if (!url) return null;
+  const m = String(url).match(/\/fiction\/(\d+)/);
+  return m ? m[1] : null;
+}
+
+// Auto-generated notes summarising what RRWG knows about a booking. User can
+// edit these freely afterward — this is just the first draft.
+export function buildRrwgNotes(booking) {
+  const parts = ['RRWG'];
+  if (booking.status) parts.push(booking.status);
+  if (booking.isMirror) parts.push('mirror');
+  if (!booking.storyLink) parts.push('offline');
+  if (booking.authorName) parts.push(`author: ${booking.authorName}`);
+  return parts.join(' · ');
+}
+
+// Fetch every booking across every one of the user's RRWG stories.
+// onProgress?: (step: string) => void — optional callback for live UI updates.
+// Returns { needsAuth: false, bookings: [{ booking, ourFictionId, partnerFictionId }] }
+// or { needsAuth: true } when the user isn't signed in to RRWG.
+export async function fetchAllRrwgBookings(onProgress = () => {}) {
+  onProgress('Authenticating with RRWG…');
+  let raw;
+  try {
+    raw = await fetchRrwgMe();
+  } catch (err) {
+    if (err instanceof RrwgAuthError) return { needsAuth: true };
+    throw err;
+  }
+  // /discord-auth/me.php nests the user under a `user` key.
+  const me = raw?.user || raw;
+  if (!me?.id) return { needsAuth: true };
+  console.log('[RR Companion RRWG] Discord user:', me.id, me.username);
+
+  onProgress('Fetching your stories…');
+  const stories = (await fetchRrwgStories(me.id)) || [];
+  const storyMap = new Map();
+  for (const s of stories) {
+    const rrId = extractFictionId(s.link);
+    if (rrId) storyMap.set(String(s.id), rrId);
+  }
+  console.log('[RR Companion RRWG] Stories:', stories.length, 'mapped:', storyMap.size);
+  logger.info('RRWG stories fetched', { count: stories.length, mapped: storyMap.size });
+
+  const all = [];
+  for (let i = 0; i < stories.length; i++) {
+    const s = stories[i];
+    onProgress(`Fetching bookings (${i + 1}/${stories.length}) — ${s.title || s.id}…`);
+    const bookings = (await fetchRrwgBookings(s.id)) || [];
+    console.log('[RR Companion RRWG] Story', s.id, s.title, '→', bookings.length, 'bookings');
+    for (const b of bookings) {
+      all.push({
+        booking: b,
+        ourFictionId: storyMap.get(String(b.authorStoryId)) || storyMap.get(String(s.id)) || null,
+        partnerFictionId: extractFictionId(b.storyLink),
+      });
+    }
+  }
+  console.log('[RR Companion RRWG] Total bookings:', all.length);
+  logger.info('RRWG bookings fetched', { totalBookings: all.length });
+
+  return { needsAuth: false, me, bookings: all };
+}
+
+export default {
+  RrwgAuthError,
+  fetchRrwgMe,
+  fetchRrwgStories,
+  fetchRrwgBookings,
+  fetchAllRrwgBookings,
+  extractFictionId,
+  buildRrwgNotes,
+};

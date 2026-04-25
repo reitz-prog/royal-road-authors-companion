@@ -126,6 +126,7 @@ export function TodayBanner() {
   const [todayShoutouts, setTodayShoutouts] = useState([]);
   const [allShoutouts, setAllShoutouts] = useState([]);
   const [myFictions, setMyFictions] = useState([]);
+  const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [insertingId, setInsertingId] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
@@ -196,13 +197,15 @@ export function TodayBanner() {
 
   const loadData = async () => {
     try {
-      const [shoutouts, fictions] = await Promise.all([
+      const [shoutouts, fictions, loadedContacts] = await Promise.all([
         db.getAll('shoutouts'),
-        db.getAll('myFictions')
+        db.getAll('myFictions'),
+        db.getAll('contacts')
       ]);
 
       setAllShoutouts(shoutouts || []);
       setMyFictions(fictions || []);
+      setContacts(loadedContacts || []);
 
       // Get the publish date (scheduled or today)
       const publishDate = getPublishDate();
@@ -873,6 +876,42 @@ export function TodayBanner() {
         mode={modalMode}
         myFictions={myFictions}
         currentFictionId={fictionId}
+        contacts={contacts}
+        onSaveScheduleField={async (shoutoutId, idx, fields) => {
+          if (!shoutoutId || idx == null || !fields) return;
+          try {
+            const shoutout = allShoutouts.find(s => s.id === shoutoutId)
+              || (await db.getById('shoutouts', shoutoutId));
+            if (!shoutout) return;
+            const newSchedules = [...(shoutout.schedules || [])];
+            if (!newSchedules[idx]) return;
+            newSchedules[idx] = { ...newSchedules[idx], ...fields };
+            const updated = { ...shoutout, schedules: newSchedules };
+            await db.save('shoutouts', updated);
+            setAllShoutouts(prev => prev.map(s => (s.id === shoutoutId ? updated : s)));
+            setModalShoutout(prev => (prev?.id === shoutoutId ? updated : prev));
+          } catch (err) {
+            logger.error('Failed to save schedule field', err);
+          }
+        }}
+        onSaveContactDiscord={async (authorName, discordUsername) => {
+          if (!authorName) return;
+          try {
+            const existing = contacts.find(c => c.authorName === authorName);
+            if (existing) {
+              if ((existing.discordUsername || '') === (discordUsername || '')) return;
+              const updated = { ...existing, discordUsername: discordUsername || '' };
+              await db.save('contacts', updated);
+              setContacts(prev => prev.map(c => (c.id === updated.id ? updated : c)));
+            } else {
+              const fresh = { authorName, discordUsername: discordUsername || '', profileUrl: '', authorAvatar: '' };
+              const id = await db.save('contacts', fresh);
+              setContacts(prev => [...prev, { ...fresh, id }]);
+            }
+          } catch (err) {
+            logger.error('Failed to save contact Discord username', err);
+          }
+        }}
       />
     </>
   );
