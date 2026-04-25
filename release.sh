@@ -22,7 +22,7 @@ CHROME_ZIP="authors-companion-v$VERSION.zip"
 echo "Creating $CHROME_ZIP..."
 rm -f "$CHROME_ZIP"
 zip -r "$CHROME_ZIP" \
-    manifest.json popup.html offscreen.html guild.html \
+    manifest.json popup.html offscreen.html \
     icons/ \
     dist/*.js dist/*.js.map
 
