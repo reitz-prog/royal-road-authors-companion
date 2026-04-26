@@ -1714,14 +1714,21 @@ async function runImport(workbookData) {
             }
           }
 
-          // Build schedule
+          // Build schedule. Per-schedule fields (expectedSwapDate, swap data,
+          // lastSwapScanDate) round-trip via columns so a re-import keeps the
+          // exact same per-schedule state.
           let newSchedule = null;
           if (myFiction && date) {
             newSchedule = {
               fictionId: String(myFiction.fictionId),
               date: date,
               chapter: row['Chapter'] || null,
-              chapterUrl: row['Chapter URL'] || null
+              chapterUrl: row['Chapter URL'] || null,
+              expectedSwapDate: (row['Expected Swap'] || '').toString().trim(),
+              swappedDate: (row['Swapped Date'] || '').toString().trim(),
+              swappedChapter: (row['Swapped Chapter'] || '').toString().trim(),
+              swappedChapterUrl: (row['Swapped Chapter URL'] || '').toString().trim(),
+              lastSwapScanDate: (row['Last Scan Date'] || '').toString().trim(),
             };
           }
 

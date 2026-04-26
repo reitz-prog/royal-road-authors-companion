@@ -35456,10 +35456,11 @@
           "Chapter": schedule.chapter || "",
           "Chapter URL": schedule.chapterUrl || "",
           "Expected Return": shoutout.expectedReturnDate || "",
-          "Swapped Date": shoutout.swappedDate || "",
-          "Swapped Chapter": shoutout.swappedChapter || "",
-          "Swapped Chapter URL": shoutout.swappedChapterUrl || "",
-          "Last Scan Date": shoutout.lastSwapScanDate || ""
+          "Expected Swap": schedule.expectedSwapDate || "",
+          "Swapped Date": schedule.swappedDate || shoutout.swappedDate || "",
+          "Swapped Chapter": schedule.swappedChapter || shoutout.swappedChapter || "",
+          "Swapped Chapter URL": schedule.swappedChapterUrl || shoutout.swappedChapterUrl || "",
+          "Last Scan Date": schedule.lastSwapScanDate || shoutout.lastSwapScanDate || ""
         });
       }
     }
@@ -35489,6 +35490,8 @@
         // Chapter URL
         { wch: 12 },
         // Expected Return
+        { wch: 12 },
+        // Expected Swap
         { wch: 12 },
         // Swapped Date
         { wch: 25 },

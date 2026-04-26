@@ -1817,7 +1817,12 @@ async function runImport(workbookData) {
               fictionId: String(myFiction.fictionId),
               date,
               chapter: row["Chapter"] || null,
-              chapterUrl: row["Chapter URL"] || null
+              chapterUrl: row["Chapter URL"] || null,
+              expectedSwapDate: (row["Expected Swap"] || "").toString().trim(),
+              swappedDate: (row["Swapped Date"] || "").toString().trim(),
+              swappedChapter: (row["Swapped Chapter"] || "").toString().trim(),
+              swappedChapterUrl: (row["Swapped Chapter URL"] || "").toString().trim(),
+              lastSwapScanDate: (row["Last Scan Date"] || "").toString().trim()
             };
           }
           const existingShoutout = shoutoutsByRrFictionId.get(String(rrFictionId));
